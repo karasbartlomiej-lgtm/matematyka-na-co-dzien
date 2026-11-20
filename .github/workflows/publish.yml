@@ -28,6 +28,10 @@ jobs:
           sed -i "s/const cacheName='matematyka-v1'/const cacheName='matematyka-${GITHUB_SHA}'/" dist/sw.js
           node --check dist/sw.js
           zip -qr matematyka-pwa.zip dist README.md tests
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && !github.event.repository.private
+        with:
+          path: dist
       - uses: actions/upload-artifact@v4
         with:
           name: matematyka-pwa
@@ -54,3 +58,18 @@ jobs:
           else
             gh release create "$version" matematyka-pwa.zip --target "$GITHUB_SHA" --title "Matematyka · $version" --generate-notes --latest
           fi
+
+  pages:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !github.event.repository.private
+    needs: test
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Wdróż aplikację na GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
