@@ -45,4 +45,6 @@ Przeglądarkowy test lokalnego podglądu objął trening z poprawnymi i błędny
 
 ## Aktualizacje z GitHuba
 
-Każdy zapis do gałęzi `main` uruchamia testy. Po ich przejściu automatyzacja tworzy wydanie ze statyczną aplikacją w zakładce **Releases**. Paczka aktualizacji odświeża pamięć podręczną PWA na podstawie identyfikatora wersji. GitHub Releases udostępnia paczkę do pobrania. Aby aktualizacja trafiała również pod adres używany na telefonie, podłącz repozytorium do wybranego hostingu i ustaw katalog publikacji na `dist`. Prywatny adres ChatGPT Sites ma własne źródło i osobny proces publikacji.
+Publiczna aplikacja działa na [GitHub Pages](https://karasbartlomiej-lgtm.github.io/matematyka-na-co-dzien/). Każda zmiana w gałęzi `main` uruchamia testy GitHub Actions. Po ich przejściu workflow wdraża katalog `dist/` i publikuje ZIP w zakładce **Releases**. Identyfikator pamięci podręcznej PWA zmienia się przy każdym wdrożeniu.
+
+Postępy są powiązane z adresem strony. Aby przenieść profile z wcześniejszego podglądu, wyeksportuj tam kopię w **Ustawieniach**, a następnie zaimportuj ją na GitHub Pages.
