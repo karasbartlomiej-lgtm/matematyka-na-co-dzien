@@ -1,0 +1,56 @@
+name: Testy i automatyczna publikacja
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matematyka-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tests/check.mjs
+      - name: Przygotuj PWA z identyfikatorem aktualizacji
+        run: |
+          sed -i "s/const cacheName='matematyka-v1'/const cacheName='matematyka-${GITHUB_SHA}'/" dist/sw.js
+          node --check dist/sw.js
+          zip -qr matematyka-pwa.zip dist README.md tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matematyka-pwa
+          path: matematyka-pwa.zip
+
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: matematyka-pwa
+      - name: Wydaj nową wersję w prywatnym repozytorium
+        run: |
+          version="build-${GITHUB_SHA:0:12}"
+          if gh release view "$version" >/dev/null 2>&1; then
+            gh release upload "$version" matematyka-pwa.zip --clobber
+          else
+            gh release create "$version" matematyka-pwa.zip --target "$GITHUB_SHA" --title "Matematyka · $version" --generate-notes --latest
+          fi
