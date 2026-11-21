@@ -19,10 +19,56 @@ export function matches(input,answer){
  const a=parse(input),b=parse(answer)
  return a!==null&&(typeof a==='number'&&typeof b==='number'?Math.abs(a-b)<1e-10:a===b)
 }
+const task=(prompt,result,...steps)=>({prompt,answer:typeof result==='number'?pl(result):result,steps})
+
+function orderMedium(){
+ const type=rand(0,5)
+ const a=rand(3,10), b=rand(2,10)
+ const product=a*b
+ const leftToRight='Mnożenie i dzielenie mają to samo pierwszeństwo. Zacznij od lewej.'
+
+ switch(type){
+ case 0: {
+  const multiplier=rand(2,10)
+  return task(`${product} ÷ ${b} × ${multiplier}`,a*multiplier,
+   leftToRight,`${product} ÷ ${b} = ${a}`,`${a} × ${multiplier} = ${a*multiplier}`)
+ }
+ case 1:
+  return task(`${a} × ${b} ÷ ${a}`,b,
+   leftToRight,`${a} × ${b} = ${product}`,`${product} ÷ ${a} = ${b}`)
+ case 2: {
+  const multiplier=rand(2,9), multiplied=a*multiplier
+  const addend=rand(2,100-multiplied)
+  return task(`${addend} + ${product} ÷ ${b} × ${multiplier}`,addend+multiplied,
+   'Najpierw wykonaj dzielenie i mnożenie od lewej do prawej. Potem dodaj.',
+   `${product} ÷ ${b} = ${a}`,`${a} × ${multiplier} = ${multiplied}`,
+   `${addend} + ${multiplied} = ${addend+multiplied}`)
+ }
+ case 3: {
+  const part=rand(1,a-1), other=a-part
+  return task(`(${part} + ${other}) × ${b} ÷ ${a}`,b,
+   'Najpierw oblicz nawias. Potem mnóż i dziel od lewej do prawej.',
+   `${part} + ${other} = ${a}`,`${a} × ${b} = ${product}`,`${product} ÷ ${a} = ${b}`)
+ }
+ case 4: {
+  const base=rand(2,9), square=base*base
+  const subtract=rand(1,square-1)
+  return task(`${base}² − ${subtract}`,square-subtract,
+   'Najpierw oblicz kwadrat liczby, czyli pomnóż ją przez samą siebie.',
+   `${base} × ${base} = ${square}`,`${square} − ${subtract} = ${square-subtract}`)
+ }
+ default: {
+  const first=rand(10,90), subtract=rand(2,first-1), remaining=first-subtract
+  return task(`${first} − ${subtract} + ${b}`,remaining+b,
+   'Dodawanie i odejmowanie mają to samo pierwszeństwo. Zacznij od lewej.',
+   `${first} − ${subtract} = ${remaining}`,`${remaining} + ${b} = ${remaining+b}`)
+ }
+ }
+}
 export function exercise(id,g,l){
+ if(id==='order'&&g===4&&l===3)return orderMedium()
  const caps=g===1?[5,8,10,15,20]:g===2?[12,20,40,70,100]:g===3?[20,45,100,300,1000]:[30,90,250,800,3000]
  const cap=caps[l-1], a=rand(2,Math.floor(cap/2)),b=rand(1,a),m=rand(2,l+2),n=rand(2,Math.min(g===2?5:10,l+4))
- const task=(prompt,result,...steps)=>({prompt,answer:typeof result==='number'?pl(result):result,steps})
  switch(id){
  case 'add': return task(a+' + '+b,a+b,'Zacznij od '+a+' i dodaj '+b+'.',a+' + '+b+' = '+(a+b)+'.')
  case 'sub': return task(a+' − '+b,a-b,'Od '+a+' odejmij '+b+'.',a+' − '+b+' = '+(a-b)+'.')

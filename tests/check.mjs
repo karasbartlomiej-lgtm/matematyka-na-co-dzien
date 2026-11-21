@@ -41,11 +41,49 @@ function solve(q){
  if(s.includes('−'))return a-b
  throw Error('Brak niezależnej reguły: '+s)
 }
+function solveOrder(prompt){
+ assert.match(prompt,/^[\d ()²+−×÷]+$/)
+ const js=prompt.replaceAll('²','**2').replaceAll('−','-').replaceAll('×','*').replaceAll('÷','/')
+ return Function('return ('+js+')')()
+}
+const orderTypes=[
+ /^\d+ ÷ \d+ × \d+$/,
+ /^\d+ × \d+ ÷ \d+$/,
+ /^\d+ \+ \d+ ÷ \d+ × \d+$/,
+ /^\(\d+ \+ \d+\) × \d+ ÷ \d+$/,
+ /^\d+² − \d+$/,
+ /^\d+ − \d+ \+ \d+$/
+]
+const random=Math.random
+try{
+ for(const [type,pattern] of orderTypes.entries())for(let i=0;i<100;i++){
+  let chooseType=true
+  Math.random=()=>{
+   if(chooseType){chooseType=false;return (type+0.5)/orderTypes.length}
+   return i/100
+  }
+  const q=exercise('order',4,3)
+  assert.match(q.prompt,pattern)
+  const result=solveOrder(q.prompt)
+  assert.equal(parse(q.answer),result)
+  const steps=q.steps.slice(1)
+  assert(steps.length>=2)
+  for(const equation of steps){
+   const [calculation,answer]=equation.split(' = ')
+   assert.equal(solveOrder(calculation),Number(answer))
+  }
+  assert.equal(Number(steps.at(-1).split(' = ').at(-1)),result)
+  for(const number of [q.prompt,...steps].join(' ').match(/\d+/g).map(Number)){
+   assert(number>=0&&number<=100,JSON.stringify(q))
+  }
+ }
+}finally{Math.random=random}
+
 let samples=0, variants=0
 for(let g=1;g<=8;g++)for(const {id} of grades[g])for(let l=1;l<=5;l++){
  variants++
  for(let i=0;i<80;i++){
-  const q=exercise(id,g,l), answer=solve(q),actual=parse(q.answer)
+  const q=exercise(id,g,l), answer=id==='order'&&g===4&&l===3?solveOrder(q.prompt):solve(q),actual=parse(q.answer)
   if(typeof answer==='number')assert(Math.abs(answer-actual)<1e-9,JSON.stringify(q))
   else assert.equal(actual,answer,q.prompt)
   assert(matches(q.answer,q.answer),q.prompt)
