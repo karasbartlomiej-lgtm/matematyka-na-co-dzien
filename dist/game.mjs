@@ -9,7 +9,7 @@ export const thresholds=[0,1,3,6,10,16,24]
 export const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw'}).format()
 export const config=()=>({type:'preset',preset:0,face:0,hair:0,shirt:0,accessory:0,pet:0})
 export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:4,coins:0,food:0,toys:0,correct:0,stats:{},daily:{},pets:{}})
-export const initial=()=>{const p=profile();return {version:1,active:p.id,theme:'light',motion:!matchMedia('(prefers-reduced-motion: reduce)').matches,profiles:[p]}}
+export const initial=()=>{const p=profile();return {version:1,active:p.id,theme:'light',keepScreenAwake:false,motion:!matchMedia('(prefers-reduced-motion: reduce)').matches,profiles:[p]}}
 export const key=(g,id)=>g+':'+id
 export const record=(p,g,id)=>p.stats[key(g,id)]??Array.from({length:5},()=>[0,0])
 export function progress(rows){
@@ -91,5 +91,5 @@ export function valid(data){
  const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>int(p[k],100))&&int(p.updated)&&int(p.sleep))
  const validDaily=o=>obj(o)&&Object.entries(o).every(([k,v])=>/^\d{4}-\d\d-\d\d:[1-8]$/.test(k)&&obj(v)&&['any','correct','streak','best'].every(s=>int(v[s]))&&obj(v.topics)&&Object.values(v.topics).every(n=>int(n))&&Array.isArray(v.claimed)&&v.claimed.every(n=>int(n,2)))
  const validAvatar=(a,p)=>obj(a)&&['preset','custom','pet'].includes(a.type)&&int(a.preset,5)&&['face','hair','shirt','accessory'].every(k=>int(a[k],3))&&int(a.pet,17)&&(a.type!=='pet'||!!p.pets[a.pet])
- return obj(data)&&data.version===1&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&['coins','food','toys','correct'].every(k=>int(p[k]))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
+ return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&['coins','food','toys','correct'].every(k=>int(p[k]))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
 }

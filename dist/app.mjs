@@ -1,12 +1,33 @@
 import { grades, levels, exercise, matches, parse } from './math.mjs'
 import { animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, valid, today } from './game.mjs'
 
+import { createScreenWakeLock } from './wake-lock.mjs'
+
 const $=id=>document.getElementById(id)
 const storage='matematyka-na-co-dzien-v1'
 let state=initial()
 let loadError=false
 try {const raw=localStorage.getItem(storage);if(raw){const saved=JSON.parse(raw);if(valid(saved))state=saved;else loadError=true}}
 catch {loadError=true}
+const screenWakeStatus={
+ off:'Ekran wygasza się zgodnie z ustawieniami urządzenia.',
+ pending:'Włączam zapobieganie wygaszaniu…',
+ active:'Ekran pozostanie włączony, gdy aplikacja jest widoczna.',
+ paused:'Po powrocie aplikacja ponowi próbę.',
+ blocked:'Urządzenie nie utrzymuje teraz ekranu włączonego. Przełącz opcję ponownie lub sprawdź tryb oszczędzania energii.',
+ unsupported:'Ta przeglądarka nie obsługuje zapobiegania wygaszaniu.'
+}
+let wakeStatus='off'
+const wakeLock=createScreenWakeLock({
+ request:typeof navigator.wakeLock?.request==='function'?()=>navigator.wakeLock.request('screen'):null,
+ isVisible:()=>document.visibilityState==='visible',
+ onStatus:status=>{
+  wakeStatus=status
+  const message=$('wake-status')
+  if(message)message.textContent=screenWakeStatus[status]
+ }
+})
+const syncWakeLock=()=>wakeLock.sync(state.keepScreenAwake===true)
 const active=()=>state.profiles.find(x=>x.id===state.active)
 let page='learn', chosen=null, level=1, limit=10, session=null, group=0, draft=null, fx=null, toastTimer
 const esc=x=>String(x).replace(/[&<>"']/g,k=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[k]))
@@ -143,7 +164,7 @@ function users(){
  return '<section class="screen narrow">'+head('Profile na tym urządzeniu')+'<div class="panel stack switcher">'+state.profiles.map(p=>'<div class="row"><span class="row">'+avatar(p.avatar)+'<span><strong>'+esc(p.name)+'</strong><br><small>Klasa '+p.grade+(p.id===state.active?' · aktywny':'')+'</small></span></span><div class="actions">'+button('switch','Wybierz',{val:p.id,disabled:p.id===state.active})+button('delete','Usuń',{val:p.id,class:'danger',label:'Usuń profil '+esc(p.name)})+'</div></div>').join('')+'</div><form id="new-profile" class="panel stack"><label class="form-row">Imię lub pseudonim nowego profilu<input name="name" maxlength="28" required></label><div><button class="primary" type="submit">Dodaj profil</button></div></form></section>'
 }
 function settings(){
- return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+route('users','Zarządzaj profilami')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
+ return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+route('users','Zarządzaj profilami')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
 }
 function render(scroll=false){
  const p=active()
@@ -255,6 +276,11 @@ document.addEventListener('submit',e=>{
  else {Object.assign(active(),{name,avatar:draft.avatar});save();go('profile');toast('Profil zapisany.')}
 })
 document.addEventListener('change',async e=>{
+ if(e.target.id==='keep-screen-awake'){
+  state.keepScreenAwake=e.target.checked
+  save()
+  syncWakeLock()
+ }
  if(e.target.id==='motion'){state.motion=e.target.checked;save();render()}
  if(e.target.dataset.avatar&&draft){draft.avatar[e.target.dataset.avatar]=+e.target.value;$('avatar-live').innerHTML=avatar(draft.avatar)}
  if(e.target.id==='backup'){
@@ -265,7 +291,7 @@ document.addEventListener('change',async e=>{
    confirmAction('Zastąpić wszystkie profile i ustawienia danymi z kopii?',()=>{
     const previous=state
     state=imported
-    if(save()){go('learn');toast('Kopia zaimportowana.')}
+    if(save()){syncWakeLock();go('learn');toast('Kopia zaimportowana.')}
     else state=previous
    })
   }catch{toast('Plik nie jest poprawną kopią tej aplikacji.')}
@@ -294,8 +320,11 @@ setInterval(()=>{
 },5000)
 window.addEventListener('storage',e=>{
  if(e.key!==storage||!e.newValue)return
- try{const changed=JSON.parse(e.newValue);if(valid(changed)){state=changed;go('learn');toast('Zapis z innej karty został wczytany.')}}catch{}
+ try{const changed=JSON.parse(e.newValue);if(valid(changed)){state=changed;syncWakeLock();go('learn');toast('Zapis z innej karty został wczytany.')}}catch{}
 })
+document.addEventListener('visibilitychange',syncWakeLock)
+window.addEventListener('pageshow',syncWakeLock)
 render()
+syncWakeLock()
 if(loadError)toast('Nie udało się odczytać wcześniejszego zapisu. Możesz przywrócić kopię w ustawieniach.')
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{})

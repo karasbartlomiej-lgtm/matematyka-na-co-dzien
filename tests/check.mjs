@@ -98,6 +98,8 @@ assert.equal(readPet(p.pets[0],now+999e7).food,25)
 assert.deepEqual([b.coins,b.food,b.toys,Object.keys(b.pets).length],[0,0,0,0])
 const snapshot={version:1,active:p.id,profiles:[p,b],theme:'dark',motion:false}
 assert(valid(JSON.parse(JSON.stringify(snapshot))))
+assert(valid({...snapshot,keepScreenAwake:true}))
+assert(!valid({...snapshot,keepScreenAwake:'true'}))
 assert(!valid({...snapshot,version:2}))
 assert(!valid({...snapshot,profiles:[p,p]}))
 assert(!valid({...snapshot,profiles:[{...p,coins:-1},b]}))

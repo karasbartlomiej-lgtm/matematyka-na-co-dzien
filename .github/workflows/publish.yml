@@ -22,7 +22,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node tests/check.mjs
+      - run: |
+          node tests/check.mjs
+          node tests/wake-lock.mjs
       - name: Przygotuj PWA z identyfikatorem aktualizacji
         run: |
           sed -i "s/const cacheName='matematyka-v1'/const cacheName='matematyka-${GITHUB_SHA}'/" dist/sw.js
