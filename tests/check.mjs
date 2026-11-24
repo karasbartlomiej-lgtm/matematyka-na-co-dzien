@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {grades,exercise,matches,parse} from '../dist/math.mjs'
-import {animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, valid} from '../dist/game.mjs'
+import {animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
 
 function solve(q){
  const s=q.prompt, nums=s.match(/\d+(?:,\d+)?/g)?.map(n=>+n.replace(',','.'))??[]
@@ -99,7 +99,7 @@ assert.equal(matches('1,2,3','1,2'),false)
 const p=profile('Test A'), b=profile('Test B'), date='2026-11-21'
 for(let i=0;i<12;i++)gradeAnswer(p,4,'add',3,true,date)
 assert.deepEqual(record(p,4,'add')[2],[12,12])
-assert.deepEqual([p.coins,p.food,p.toys],[120,4,1])
+assert.deepEqual([p.coins,p.food,p.toys],[120,0,1])
 assert.equal(progress(record(p,4,'add')),100)
 assert.equal(rank(p).index,1)
 assert.equal(rank(b).index,0)
@@ -107,7 +107,7 @@ assert.equal(progress([[100,100],[20,20],[1,1],[0,0],[0,0]])<100,true)
 assert.equal(progress([[0,0],[0,0],[13,10],[0,0],[0,0]])<100,true)
 assert.equal(progress(record(p,3,'add')),0)
 gradeAnswer(p,4,'add',3,false,date)
-assert.equal(p.coins,120)
+assert.equal(p.coins,115)
 assert.equal(dailySet(4,date).length,3)
 assert.notDeepEqual(dailySet(4,date),dailySet(4,'2026-11-22'))
 assert(claim(p,4,'any',date))
@@ -123,7 +123,7 @@ for(let i=0;i<animals.length;i++){
  assert.equal(p.coins,balance-animals[i][1])
  assert(!buy(p,i))
 }
-const now=Date.now()
+const now=Date.parse(date+'T12:00:00Z')
 assert(care(p,0,'food',now))
 assert(care(p,0,'play',now))
 assert.equal(p.pets[0].food,100)
@@ -140,5 +140,36 @@ assert(valid({...snapshot,keepScreenAwake:true}))
 assert(!valid({...snapshot,keepScreenAwake:'true'}))
 assert(!valid({...snapshot,version:2}))
 assert(!valid({...snapshot,profiles:[p,p]}))
-assert(!valid({...snapshot,profiles:[{...p,coins:-1},b]}))
+assert(valid({...snapshot,profiles:[{...p,coins:-5},b]}))
+assert(!valid({...snapshot,profiles:[{...p,coins:-0.5},b]}))
+
+const caretaker=profile('Opiekun')
+caretaker.coins=150
+assert(buy(caretaker,0))
+assert(buy(caretaker,1))
+const evening=Date.parse('2026-11-24T22:59:00Z')
+const morning=Date.parse('2026-11-24T23:00:00Z')
+assert.equal(today(evening),'2026-11-24')
+assert.equal(today(morning),'2026-11-25')
+gradeAnswer(caretaker,4,'add',1,false,today(evening))
+assert.equal(caretaker.coins,-5)
+caretaker.food=100 // Legacy reserves cannot replace today's exercises.
+for(let i=0;i<14;i++)gradeAnswer(caretaker,4,'add',1,true,today(evening))
+assert.equal(caretaker.coins,135)
+assert(!care(caretaker,0,'food',evening))
+gradeAnswer(caretaker,2,'add',1,true,today(evening))
+assert.deepEqual(feedingStatus(caretaker,today(evening)),{fed:0,total:2,available:15})
+assert(care(caretaker,0,'food',evening))
+assert.equal(readPet(caretaker.pets[0],evening).food,100)
+assert(!care(caretaker,0,'food',evening))
+assert(!care(caretaker,1,'food',evening))
+for(let i=0;i<15;i++)gradeAnswer(caretaker,2,'add',1,true,today(evening))
+assert(care(caretaker,1,'food',evening))
+assert.deepEqual(feedingStatus(caretaker,today(evening)),{fed:2,total:2,available:0})
+gradeAnswer(caretaker,4,'add',1,true,today(evening))
+assert.deepEqual(feedingStatus(caretaker,today(morning)),{fed:0,total:2,available:0})
+assert(!care(caretaker,0,'food',morning))
+assert(readPet(caretaker.pets[0],morning).food<50)
+const backup={...snapshot,active:caretaker.id,profiles:[caretaker]}
+assert(valid(JSON.parse(JSON.stringify(backup))))
 console.log(samples+' zadań, '+variants+' zestawień klasy, kategorii i trudności. Testy logiki gry i kopii zakończone pomyślnie.')
