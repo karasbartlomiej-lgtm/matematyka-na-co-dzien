@@ -1,10 +1,37 @@
 import assert from 'node:assert/strict'
-import {grades,exercise,matches,parse} from '../dist/math.mjs'
+import {grades,activeGrade,activeTopics,exercise,matches,parse} from '../dist/math.mjs'
 import {animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
+
+const placeNames=[
+ 'jedności','dziesiątek','setek','tysięcy','dziesiątek tysięcy','setek tysięcy',
+ 'milionów','dziesiątek milionów','setek milionów','miliardów'
+]
+function solvePlaceValue(prompt){
+ if(prompt.startsWith('Zapisz jedną liczbą: ')){
+  return prompt.slice('Zapisz jedną liczbą: '.length).split(' + ').reduce((sum,part)=>{
+   const [digit,unit]=part.split(' × ').map(value=>Number(value.replaceAll(' ','')))
+   return sum+digit*unit
+  },0)
+ }
+ const [,place,number]=prompt.match(/na miejscu (.+) w liczbie ([\d ]+)\?$/)
+ const offset=placeNames.indexOf(place)
+ assert(offset>=0)
+ const digits=number.replaceAll(' ','')
+ const digit=Number(digits.at(-1-offset))
+ return prompt.startsWith('Jaka cyfra')?digit:Number(String(digit)+'0'.repeat(offset))
+}
+assert.equal(activeGrade,4)
+assert.equal(activeTopics.length,11)
+assert(activeTopics.some(topic=>topic.id==='placeValue'))
+assert.equal(parse('1 234 567 890'),1234567890)
+assert.equal(parse('1\u202f234\u202f567\u202f890'),1234567890)
+assert.equal(parse('12 34'),null)
+assert(matches('9 000 000 000','9000000000'))
 
 function solve(q){
  const s=q.prompt, nums=s.match(/\d+(?:,\d+)?/g)?.map(n=>+n.replace(',','.'))??[]
  const [a,b,c,d]=nums
+ if(/^(Jaka cyfra|Jaką wartość|Zapisz jedną liczbą)/.test(s))return solvePlaceValue(s)
  if(s.startsWith('Policz kropki'))return [...s].filter(x=>x==='●').length
  if(/^\d+  \?/.test(s))return a===b?'=':a<b?'<':'>'
  if(s.startsWith('Ola'))return s.includes('pudełek')?a*b+c:a+b
@@ -79,6 +106,18 @@ try{
  }
 }finally{Math.random=random}
 
+for(const [level,place] of [[1,'jedności'],[1,'dziesiątek'],[3,'milionów'],[5,'miliardów']]){
+ const index=placeNames.indexOf(place)
+ const min=level===1?0:index-2
+ const rolls=[(index-min+0.5)/(level===1?2:3),0.23,0]
+ try{
+  Math.random=()=>rolls.shift()
+  const q=exercise('placeValue',4,level)
+  assert(q.prompt.includes('na miejscu '+place+' w liczbie'))
+  assert.equal(parse(q.answer),solvePlaceValue(q.prompt))
+ }finally{Math.random=random}
+}
+
 let samples=0, variants=0
 for(let g=1;g<=8;g++)for(const {id} of grades[g])for(let l=1;l<=5;l++){
  variants++
@@ -103,6 +142,12 @@ assert.deepEqual([p.coins,p.food,p.toys],[120,0,1])
 assert.equal(progress(record(p,4,'add')),100)
 assert.equal(rank(p).index,1)
 assert.equal(rank(b).index,0)
+const legacy=profile('Starszy profil')
+legacy.grade=7
+for(let i=0;i<12;i++)gradeAnswer(legacy,7,'pct',3,true,date)
+assert.equal(progress(record(legacy,7,'pct')),100)
+assert.equal(rank(legacy).index,0)
+assert.equal(record(legacy,activeGrade,'pct')[2][0],0)
 assert.equal(progress([[100,100],[20,20],[1,1],[0,0],[0,0]])<100,true)
 assert.equal(progress([[0,0],[0,0],[13,10],[0,0],[0,0]])<100,true)
 assert.equal(progress(record(p,3,'add')),0)
@@ -136,6 +181,7 @@ assert.equal(readPet(p.pets[0],now+999e7).food,25)
 assert.deepEqual([b.coins,b.food,b.toys,Object.keys(b.pets).length],[0,0,0,0])
 const snapshot={version:1,active:p.id,profiles:[p,b],theme:'dark',motion:false}
 assert(valid(JSON.parse(JSON.stringify(snapshot))))
+assert(valid({...snapshot,active:legacy.id,profiles:[legacy]}))
 assert(valid({...snapshot,keepScreenAwake:true}))
 assert(!valid({...snapshot,keepScreenAwake:'true'}))
 assert(!valid({...snapshot,version:2}))

@@ -1,17 +1,17 @@
-import { grades } from './math.mjs'
+import { grades, activeGrade, activeTopics } from './math.mjs'
 export const animals=[
  ['Chomik',50],['Kot',100],['Pies',150],['Królik',120],['Papuga',180],['Żółw',200],
  ['Lis',250],['Pingwin',300],['Lew',400],['Tygrys',450],['Słoń',550],['Panda',600],
  ['Tyranozaur',800],['Brachiozaur',850],['Jednorożec',1000],['Kosmita',1100],['Feniks',1300],['Smok',1500]]
 export const groups=['Zwierzęta domowe','Dzikie zwierzęta','Fantastyczne stworzenia']
 export const ranks=['🌱 Początkujący','🥉 Uczeń matematyki','🥈 Specjalista','🥇 Ekspert','🏆 Mistrz matematyki','💎 Matematyczny geniusz','👑 Legenda matematyki']
-export const thresholds=[0,1,3,6,10,16,24]
+export const thresholds=[0,1,2,4,6,8,activeTopics.length]
 const dayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw'})
 export const today=now=>dayFormat.format(now)
 export const pointsForAnswer=correct=>correct?10:-5
 export const feedingCost=15
 export const config=()=>({type:'preset',preset:0,face:0,hair:0,shirt:0,accessory:0,pet:0})
-export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:4,coins:0,food:0,toys:0,correct:0,stats:{},daily:{},pets:{}})
+export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:activeGrade,coins:0,food:0,toys:0,correct:0,stats:{},daily:{},pets:{}})
 export const initial=()=>{const p=profile();return {version:1,active:p.id,theme:'light',keepScreenAwake:false,motion:!matchMedia('(prefers-reduced-motion: reduce)').matches,profiles:[p]}}
 export const key=(g,id)=>g+':'+id
 export const record=(p,g,id)=>p.stats[key(g,id)]??Array.from({length:5},()=>[0,0])
@@ -22,7 +22,7 @@ export function progress(rows){
  const mastery=Math.min(1,attempts/12,correct/10,accuracy/.8)
  return Math.min(mastery===1?100:99,Math.round(mastery*100))
 }
-export const rank=p=>{const total=Object.values(p.stats).filter(r=>progress(r)===100).length;return {total,index:thresholds.findLastIndex(t=>total>=t)}}
+export const rank=p=>{const total=activeTopics.filter(topic=>progress(record(p,activeGrade,topic.id))===100).length;return {total,index:thresholds.findLastIndex(t=>total>=t)}}
 export function dailySet(g,date){
  const rotation=Number(date.replaceAll('-',''))%3
  const category=grades[g][(Number(date.slice(-2))+g)%grades[g].length]

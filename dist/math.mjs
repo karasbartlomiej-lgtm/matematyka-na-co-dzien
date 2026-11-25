@@ -1,7 +1,9 @@
 const c=(id,name,icon)=>({id,name,icon})
 const topics=Object.fromEntries([
-c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓')].map(x=>[x.id,x]))
-export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo','add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
+c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓'),c('placeValue','System dziesiętny','10ⁿ')].map(x=>[x.id,x]))
+export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo','placeValue add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
+export const activeGrade=4
+export const activeTopics=grades[activeGrade]
 export const levels=['Bardzo łatwy','Łatwy','Średni','Trudny','Ekspert']
 const rand=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1))
 const pick=xs=>xs[rand(0,xs.length-1)]
@@ -9,7 +11,9 @@ const gcd=(a,b)=>b?gcd(b,a%b):Math.abs(a)
 const fraction=(a,b)=>{const d=gcd(a,b);return b/d===1?String(a/d):a/d+'/'+b/d}
 export const pl=n=>String(n).replace('.',',')
 export function parse(raw){
- const s=raw.trim().replaceAll('−','-').replace(',','.')
+ const clean=raw.trim().replaceAll('−','-').replace(',','.')
+ const grouped=/^-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:\.\d+)?$/
+ const s=grouped.test(clean)?clean.replace(/[ \u00a0\u202f]/g,''):clean
  if (/^[<=>]$/.test(s)) return s
  if (/^-?\d+\/\d+$/.test(s)){const [a,b]=s.split('/').map(Number);return b&&Number.isSafeInteger(a)&&Number.isSafeInteger(b)?a/b:null}
  if (/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(s)&&Number.isFinite(+s)) return +s
@@ -20,6 +24,41 @@ export function matches(input,answer){
  return a!==null&&(typeof a==='number'&&typeof b==='number'?Math.abs(a-b)<1e-10:a===b)
 }
 const task=(prompt,result,...steps)=>({prompt,answer:typeof result==='number'?pl(result):result,steps})
+
+const decimalPlaces=[
+ 'jedności','dziesiątek','setek','tysięcy','dziesiątek tysięcy',
+ 'setek tysięcy','milionów','dziesiątek milionów','setek milionów','miliardów'
+]
+const groupDigits=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ')
+function decimalSystem(level){
+ const highest=[1,3,6,8,9][level-1]
+ const place=rand(level>=3?highest-2:0,highest)
+ const magnitude=10**place
+ const number=rand(10**highest,10**(highest+1)-1)
+ const digit=Math.floor(number/magnitude)%10
+ const name=decimalPlaces[place]
+ const formatted=groupDigits(number)
+ const variant=rand(0,level>=2?2:1)
+
+ if(variant===0)return task(`Jaka cyfra stoi na miejscu ${name} w liczbie ${formatted}?`,digit,
+  'Zacznij od prawej. Pierwsze miejsce to jedności, kolejne to dziesiątki.',
+  `Miejsce ${name} to ${place+1}. pozycja od prawej. Stoi tam cyfra ${digit}.`)
+
+ if(variant===1)return task(`Jaką wartość ma cyfra na miejscu ${name} w liczbie ${formatted}?`,digit*magnitude,
+  `Na miejscu ${name} jest cyfra ${digit}, a jednostka tego miejsca to ${groupDigits(magnitude)}.`,
+  `${digit} × ${groupDigits(magnitude)} = ${groupDigits(digit*magnitude)}.`)
+
+ const positions=[...new Set([highest,place,rand(0,highest-1)])].sort((a,b)=>b-a)
+ const terms=positions.map(position=>{
+  const unit=10**position
+  const value=rand(1,9)
+  return {part:`${value} × ${groupDigits(unit)}`, value:value*unit}
+ })
+ const result=terms.reduce((sum,term)=>sum+term.value,0)
+ return task('Zapisz jedną liczbą: '+terms.map(term=>term.part).join(' + '),result,
+  'Pomnóż każdą cyfrę przez jednostkę jej miejsca. Pominięte miejsca mają wartość zero.',
+  terms.map(term=>groupDigits(term.value)).join(' + ')+' = '+groupDigits(result)+'.')
+}
 
 function orderMedium(){
  const type=rand(0,5)
@@ -66,6 +105,7 @@ function orderMedium(){
  }
 }
 export function exercise(id,g,l){
+ if(id==='placeValue'&&g===activeGrade)return decimalSystem(l)
  if(id==='order'&&g===4&&l===3)return orderMedium()
  const caps=g===1?[5,8,10,15,20]:g===2?[12,20,40,70,100]:g===3?[20,45,100,300,1000]:[30,90,250,800,3000]
  const cap=caps[l-1], a=rand(2,Math.floor(cap/2)),b=rand(1,a),m=rand(2,l+2),n=rand(2,Math.min(g===2?5:10,l+4))
