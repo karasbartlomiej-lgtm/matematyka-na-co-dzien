@@ -1,6 +1,6 @@
 const cacheName='matematyka-v1'
-const files=['./','./index.html','./style.css','./app.mjs','./math.mjs','./game.mjs','./wake-lock.mjs','./logo.svg','./icon-192.png','./icon-512.png','./app.webmanifest',...Array.from({length:18},(_,i)=>'./pets/pet-'+i+'.png')]
-self.addEventListener('install',event=>event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(files)).then(()=>self.skipWaiting())))
+const files=['./','./index.html','./style.css','./app.mjs','./math.mjs','./game.mjs','./profile-lock.mjs','./profile-sync.mjs','./wake-lock.mjs','./logo.svg','./icon-192.png','./icon-512.png','./app.webmanifest',...Array.from({length:18},(_,i)=>'./pets/pet-'+i+'.png')]
+self.addEventListener('install',event=>event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(files.map(path=>new Request(path,{cache:'reload'})))).then(()=>self.skipWaiting())))
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('matematyka-')&&key!==cacheName).map(key=>caches.delete(key)))).then(()=>self.clients.claim())))
 self.addEventListener('fetch',event=>{
  const url=new URL(event.request.url)

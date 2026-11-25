@@ -1,3 +1,5 @@
+import {openSync,newToken} from './profile-sync.mjs'
+import { createFamilyVault, sealPassword, verifyProfile } from './profile-lock.mjs'
 import { grades, levels, exercise, matches, parse } from './math.mjs'
 import { supplies, stock, buySupply, getSupply, animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, feedingCost, feedingStatus, pointsForAnswer, valid, today } from './game.mjs'
 
@@ -6,6 +8,8 @@ import { createScreenWakeLock } from './wake-lock.mjs'
 const $=id=>document.getElementById(id)
 const storage='matematyka-na-co-dzien-v1'
 let state=initial()
+let unlocked=null
+let loginTarget=null
 let loadError=false
 try {const raw=localStorage.getItem(storage);if(raw){const saved=JSON.parse(raw);if(valid(saved))state=saved;else loadError=true}}
 catch {loadError=true}
@@ -29,7 +33,7 @@ const wakeLock=createScreenWakeLock({
 })
 const syncWakeLock=()=>wakeLock.sync(state.keepScreenAwake===true)
 const active=()=>state.profiles.find(x=>x.id===state.active)
-let page='learn', chosen=null, level=1, limit=10, session=null, group=0, draft=null, fx=null, toastTimer
+let page='learn', chosen=null, level=4, limit=10, session=null, group=0, draft=null, fx=null, toastTimer
 const esc=x=>String(x).replace(/[&<>"']/g,k=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[k]))
 const coins='<span class="coin" aria-hidden="true">✦</span>'
 const format=n=>n.toLocaleString('pl-PL')
@@ -89,8 +93,46 @@ function toast(message,celebrate=false){
  }
  toastTimer=setTimeout(()=>$('toast').textContent='',3800)
 }
+const linkedToken=new URLSearchParams(location.hash.slice(1)).get('profil')
+let pendingLink=linkedToken,cloud=null,loginPin=null
+let syncQueue=Promise.resolve()
+function syncSave(){
+ const conn=cloud
+ if(!conn||conn.id!==unlocked||conn.id!==active().id)return
+ const data=structuredClone(active()), meta=state.links[conn.id]
+ meta.dirty=true
+ syncQueue=syncQueue.then(async()=>{
+  try{
+   meta.tag=await conn.api.write(data,meta.tag)
+   if(JSON.stringify(state.profiles.find(x=>x.id===conn.id))===JSON.stringify(data))meta.dirty=false
+   localStorage.setItem(storage,JSON.stringify(state))
+  }catch(err){toast(err.message)}
+ })
+}
+async function connectProfile(){
+ const p=active()
+ await syncQueue
+ let meta=state.links?.[p.id]
+ if(!meta){
+  const token=newToken(),api=await openSync(token,loginPin)
+  const tag=await api.write(p,null)
+  meta={token,tag};(state.links??={})[p.id]=meta
+  cloud={api,id:p.id}
+  localStorage.setItem(storage,JSON.stringify(state))
+ }
+ const url=new URL(location.href);url.hash='profil='+meta.token
+ prompt('Skopiuj prywatny link na drugi telefon. Do otwarcia profilu potrzebne jest także jego hasło.',url.href)
+}
+function downloadJson(name,data){
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
+ const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)
+}
+async function rememberPassword(p,pw){
+ if(!state.vault)return
+ state.vault.entries[p.id]={name:p.name,ciphertext:await sealPassword(state.vault.publicKey,pw)}
+}
 function save(){
- try {localStorage.setItem(storage,JSON.stringify(state));return true}
+ try {syncSave();localStorage.setItem(storage,JSON.stringify(state));return true}
  catch {toast('Nie udało się zapisać danych na urządzeniu. Wyeksportuj kopię w ustawieniach.');return false}
 }
 function go(target){
@@ -113,24 +155,34 @@ function challengeCards(p,compact){
   return '<article class="'+(compact?'mini-challenge':'challenge')+'"><div class="row"><strong>'+esc(c.name)+'</strong><span class="reward" title="Monety">+'+c.reward+'</span></div>'+bar(100*n/c.target,c.name)+'<small>'+n+' / '+c.target+(done?' · Nagroda odebrana':'')+'</small>'+(!compact&&!done?button('claim','Odbierz nagrodę',{val:c.id,disabled:n<c.target,class:'primary'}):'')+'</article>'
  }).join('')
 }
+function leaderboard(){
+ const rows=state.profiles.map(p=>({name:p.name,count:Object.keys(p.pets).length,
+  value:Object.entries(p.pets).reduce((n,[i,pet])=>n+(pet.pricePaid??animals[i][1]),0)}))
+ rows.sort((a,b)=>b.value-a.value||a.name.localeCompare(b.name,'pl'))
+ let place=0
+ return '<section class="panel stack"><h2>Ranking zwierząt</h2><small>Profile na tym urządzeniu według łącznej ceny zakupionych zwierząt</small>'+rows.map((r,i)=>{
+  if(!i||rows[i-1].value!==r.value)place=i+1
+  return '<div class="row spaced"><strong>'+place+'. '+esc(r.name)+'</strong><span>'+r.count+' szt. · '+format(r.value)+' monet</span></div>'
+ }).join('')+'</section>'
+}
 function learn(p){
  const r=rank(p)
  return '<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
   const percent=progress(record(p,active().grade,c.id))
   return button('topic','<span class="symbol" aria-hidden="true">'+c.icon+'</span><strong>'+c.name+'</strong><span class="topic-meta"><small>'+percent+'%</small>'+bar(percent,c.name)+'</span>'+icon('next'),{val:c.id,class:'topic'})
- }).join('')+'</div></section></div><aside class="stack"><section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
+ }).join('')+'</div></section></div><aside class="stack">'+leaderboard()+'<section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
 }
 function setup(){
- return '<div class="screen narrow">'+head(chosen.name,'Klasa '+active().grade+' · '+signedPoints(pointsForAnswer(true))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+1,class:'level '+(level===i+1?'selected':''),pressed:level===i+1})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
+ return '<div class="screen narrow">'+head(chosen.name,'Klasa '+active().grade+' · '+signedPoints(pointsForAnswer(true,level))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false,level))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+3,class:'level '+(level===i+3?'selected':''),pressed:level===i+3})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
 }
 function taskScreen(){
  const s=session,q=s.question, comparison=/^[<=>]$/.test(q.answer)
  const keys=comparison?['<','=','>','⌫']:['1','2','3','⌫','4','5','6','−','7','8','9','/','0',',']
- const feedback=s.checked?'<div class="feedback '+(s.ok?'':'error')+'" role="status">'+(s.ok?'<strong>Świetnie! '+signedPoints(pointsForAnswer(true))+' pkt</strong>':'<strong>Spróbujmy to razem rozwiązać. '+signedPoints(pointsForAnswer(false))+' pkt</strong><ol>'+q.steps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><p>Prawidłowy wynik <strong>'+esc(q.answer)+'</strong></p>')+'</div>':''
+ const feedback=s.checked?'<div class="feedback '+(s.ok?'':'error')+'" role="status">'+(s.ok?'<strong>Świetnie! '+signedPoints(pointsForAnswer(true,level))+' pkt</strong>':'<strong>Spróbujmy to razem rozwiązać. '+signedPoints(pointsForAnswer(false,level))+' pkt</strong><ol>'+q.steps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><p>Prawidłowy wynik <strong>'+esc(q.answer)+'</strong></p>')+'</div>':''
  return '<section class="screen narrow"><div class="row spaced"><h2>'+chosen.name+'</h2><span class="badge">Zadanie '+(s.done+(s.checked?0:1))+(s.limit?' / '+s.limit:'')+'</span></div><form id="answer-form" class="panel stack"><div class="question">'+esc(q.prompt)+'</div><label class="form-row">Twoja odpowiedź<input class="answer" id="answer" type="text" inputmode="none" autocomplete="off" spellcheck="false" maxlength="32" value="'+esc(s.input)+'" '+(s.checked?'readonly':'')+'></label><div class="keypad" aria-label="Klawiatura zadania">'+keys.map(k=>button('key',esc(k),{val:k,disabled:s.checked,label:k==='⌫'?'Usuń znak':undefined})).join('')+'</div>'+feedback+'<div class="actions"><button type="submit" class="primary" '+(s.checked?'disabled':'')+'>Sprawdź</button>'+button('next',s.limit&&s.done===s.limit?'Zobacz podsumowanie':'Następne zadanie',{disabled:!s.checked,class:s.checked?'primary':''})+'</div></form>'+button('finish','Zakończ trening')+'</section>'
 }
 function result(){
- const score=session.good*pointsForAnswer(true)+(session.done-session.good)*pointsForAnswer(false)
+ const score=session.good*pointsForAnswer(true,level)+(session.done-session.good)*pointsForAnswer(false,level)
  return '<section class="screen narrow panel result"><div class="symbol" aria-hidden="true">✓</div><h1>Trening ukończony!</h1><p>Dobra robota! Każde zadanie pomaga Ci ćwiczyć.</p><div class="score">'+session.good+'/'+session.done+'</div><p>Poprawne odpowiedzi</p><div class="row">'+coins+' <strong>'+signedPoints(score)+' pkt w tym treningu</strong></div><div class="actions">'+button('again','Nowy trening',{class:'primary'})+route('learn','Wróć do nauki')+'</div></section>'
 }
 const supplyEffects=item=>item.action==='food'
@@ -152,25 +204,35 @@ function shop(p){
  return '<section class="screen"><div class="row spaced">'+head('Sklep ze zwierzętami','Kup towarzysza za monety zdobyte w treningu.')+balance(p)+'</div><div class="choice" aria-label="Kategorie zwierząt">'+route('inventory','Przedmioty dla zwierząt')+''+groups.map((n,i)=>button('group',n,{val:i,pressed:group===i,class:group===i?'selected':''})).join('')+'</div><div class="grid">'+animals.map(([name,price],i)=>Math.floor(i/6)!==group?'':'<article class="pet-card">'+animal(i,null,true)+'<h3>'+name+'</h3><div class="row">'+coins+' <strong>'+format(price)+'</strong></div>'+button('buy',p.pets[i]?'Kupione':p.coins<price?'Brakuje '+format(price-p.coins)+' monet':'Kup',{val:i,class:'primary',disabled:!!p.pets[i]||p.coins<price})+'</article>').join('')+'</div></section>'
 }
 function pets(p){
- const now=Date.now(), date=today(now), {fed,total,available}=feedingStatus(p,date)
+ const now=Date.now(), date=today(now), {fed,total,available}=feedingStatus(p,now)
  const missing=Math.max(0,feedingCost-available)
- return '<section class="screen">'+head('Moje zwierzęta')+route('inventory','Przedmioty dla zwierząt')+'<div class="panel stack"><div class="row spaced"><strong>Poprawne odpowiedzi do wykorzystania: '+format(available)+'</strong><strong>Nakarmione dziś: '+fed+' / '+total+'</strong></div><p>Każde zwierzę potrzebuje co dzień '+feedingCost+' poprawnych odpowiedzi. Po karmieniu odejmujemy je z dziennej puli. Nowy dzień zaczyna się o północy czasu polskiego.</p><small>Zabawki: '+p.toys+' · Drzemka trwa 2 minuty.</small>'+route('learn','Ćwicz i zdobądź odpowiedzi')+'</div>'+(total?'<div class="grid">'+Object.entries(p.pets).map(([i,raw])=>{
-  const pet=readPet(raw,now,date), fedToday=pet.fedOn===date
-  const meter=(label,n)=>'<div><div class="row"><small>'+label+'</small><small>'+n+'%</small></div>'+bar(n,label)+'</div>'
+ return '<section class="screen">'+head('Moje zwierzęta')+route('inventory','Przedmioty dla zwierząt')+'<div class="panel stack"><div class="row spaced"><strong>Poprawne odpowiedzi do wykorzystania: '+format(available)+'</strong><strong>Nakarmione w ostatnich 24 h: '+fed+' / '+total+'</strong></div><p>Każde zwierzę potrzebuje co dzień '+feedingCost+' poprawnych odpowiedzi. Kup jedzenie w sklepie. Karmienie zużywa 15 poprawnych odpowiedzi z ostatnich 24 godzin. Pełny posiłek wystarcza na 24 godziny, a pełne szczęście i energia na 48 godzin.</p><small>Zabawki: '+p.toys+' · Drzemka trwa 2 minuty.</small>'+route('learn','Ćwicz i zdobądź odpowiedzi')+'</div>'+(total?'<div class="grid">'+Object.entries(p.pets).map(([i,raw])=>{
+  const pet=readPet(raw,now,date), fedToday=pet.fedAt>now-86400000
+  const meter=(label,n)=>'<div><div class="row"><small>'+label+'</small><small>'+Math.round(n)+' / 150 · '+Math.round(n/1.5)+'%</small></div>'+bar(n/1.5,label)+'</div>'
   return '<article class="pet-card">'+animal(+i,pet,true)+'<h3>'+animals[i][0]+(pet.sleep?' · śpi':'')+'</h3>'+
-   '<small>'+ (fedToday?'Nakarmiony dziś':missing?'Głodny · brakuje '+missing+' do '+feedingCost+' poprawnych odpowiedzi':pet.sleep?'Głodny · obudź przed karmieniem':'Głodny · posiłek gotowy')+'</small>'+
-   '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div><div class="actions">'+supplies.filter(item=>item.id==='meal'||stock(p,item)>0).map(item=>button('care',item.action==='food'?'Nakarm · '+item.name:'Baw się · '+item.name,{val:i+':'+item.action+':'+item.id,disabled:!!pet.sleep||(item.action==='food'?fedToday||missing>0:pet.happy===100||pet.energy<30)})).join('')+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
+   '<small>'+ (fedToday?'Nakarmiony w ostatnich 24 h':missing?'Głodny · brakuje '+missing+' do '+feedingCost+' poprawnych odpowiedzi':pet.sleep?'Głodny · obudź przed karmieniem':'Głodny · posiłek gotowy')+'</small>'+
+   '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div><div class="actions">'+supplies.filter(item=>item.id!=='meal'&&stock(p,item)>0).map(item=>button('care',item.action==='food'?'Nakarm · '+item.name:'Baw się · '+item.name,{val:i+':'+item.action+':'+item.id,disabled:!!pet.sleep||(item.action==='food'?fedToday||missing>0:pet.happy>=150||pet.energy<45)})).join('')+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
  }).join('')+'</div>':'<div class="panel empty stack"><h2>Jeszcze nie masz zwierząt</h2><p>Za 50 monet możesz kupić swojego pierwszego chomika.</p>'+route('shop','Przejdź do sklepu','primary')+'</div>')+'</section>'
 }
+function summaryStats(p){
+ const days={}
+ for(const [key,row] of Object.entries(p.daily)){
+  const day=key.slice(0,10), sum=days[day]??={any:0,correct:0}
+  sum.any+=row.any;sum.correct+=row.correct
+ }
+ days[today()]??={any:0,correct:0}
+ const total=Object.values(p.stats).flat().reduce((sum,[n,c])=>({any:sum.any+n,correct:sum.correct+c}),{any:0,correct:0})
+ return '<section class="panel stack"><h2>Wszystkie klasy</h2>'+[['Od początku profilu',total],...Object.entries(days).sort(([a],[b])=>b.localeCompare(a))].map(([label,v])=>'<div><strong>'+label+'</strong><p>Razem '+v.any+' · Dobre '+v.correct+' · Błędne '+(v.any-v.correct)+'</p></div>').join('')+'</section>'
+}
 function stats(p){
- return '<section class="screen">'+head('Statystyki','Klasa '+active().grade)+'<div class="stack">'+grades[active().grade].map(c=>{
+ return '<section class="screen">'+head('Statystyki','Klasa '+active().grade)+summaryStats(p)+'<div class="stack">'+grades[active().grade].map(c=>{
   const rows=record(p,active().grade,c.id),attempts=rows.reduce((s,r)=>s+r[0],0),correct=rows.reduce((s,r)=>s+r[1],0),pct=progress(rows)
   return '<article class="panel stat-row"><div class="row"><span class="symbol">'+c.icon+'</span><strong>'+c.name+'</strong></div><div class="row"><span>Rozwiązane <b>'+attempts+'</b></span><span>Poprawne <b>'+correct+'</b></span><span>Błędne <b>'+(attempts-correct)+'</b></span><span>Skuteczność <b>'+(attempts?Math.round(100*correct/attempts):0)+'%</b></span></div><small>Opanowanie '+pct+'%</small>'+bar(pct,c.name)+'</article>'
  }).join('')+'</div></section>'
 }
 function rankScreen(p){
  const r=rank(p)
- return '<section class="screen narrow">'+head('Moja ranga')+'<div class="rank-card"><h2>'+ranks[r.index]+'</h2><p>Opanowane kategorie we wszystkich klasach <b>'+r.total+'</b></p>'+(r.index<6?'<p>Do rangi '+ranks[r.index+1]+' potrzebujesz jeszcze '+(thresholds[r.index+1]-r.total)+' kategorii.</p>'+bar(Math.round(100*r.total/thresholds[r.index+1]),'Postęp do następnej rangi'):'<p>Zdobywasz najwyższą rangę!</p>')+'</div><div class="panel stack"><h3>Jak opanować kategorię?</h3><p>Na poziomach 3–5 rozwiąż co najmniej 12 zadań, podaj co najmniej 10 poprawnych odpowiedzi i utrzymaj skuteczność co najmniej 80%. Wyniki liczą się osobno dla każdej kategorii.</p></div>'+ranks.map((x,i)=>'<div class="panel row spaced"><strong>'+x+'</strong><small>'+thresholds[i]+' kategorii'+(r.index===i?' · Twoja ranga':'')+'</small></div>').join('')+'</section>'
+ return '<section class="screen narrow">'+head('Moja ranga')+'<div class="rank-card"><h2>'+ranks[r.index]+'</h2><p>Opanowane kategorie we wszystkich klasach <b>'+r.total+'</b></p>'+(r.index<6?'<p>Do rangi '+ranks[r.index+1]+' potrzebujesz jeszcze '+(thresholds[r.index+1]-r.total)+' kategorii.</p>'+bar(Math.round(100*r.total/thresholds[r.index+1]),'Postęp do następnej rangi'):'<p>Zdobywasz najwyższą rangę!</p>')+'</div><div class="panel stack"><h3>Jak opanować kategorię?</h3><p>Na dostępnych poziomach rozwiąż co najmniej 12 zadań, podaj co najmniej 10 poprawnych odpowiedzi i utrzymaj skuteczność co najmniej 80%. Wyniki liczą się osobno dla każdej kategorii.</p></div>'+ranks.map((x,i)=>'<div class="panel row spaced"><strong>'+x+'</strong><small>'+thresholds[i]+' kategorii'+(r.index===i?' · Twoja ranga':'')+'</small></div>').join('')+'</section>'
 }
 function profileScreen(p){
  if(!draft)return '<section class="screen narrow">'+head('Profil')+'<div class="panel stack"><div class="row">'+avatar(p.avatar)+'<div><h2>'+esc(p.name)+'</h2><small>Klasa '+active().grade+'</small></div></div><div class="row spaced">'+balance(p)+'<strong>'+ranks[rank(p).index]+'</strong></div><p>Poprawne odpowiedzi do wykorzystania na karmienie: '+format(feedingStatus(p).available)+' · Zabawki '+p.toys+' · Zwierzęta '+Object.keys(p.pets).length+'</p><div class="actions">'+button('edit','Edytuj profil',{class:'primary'})+route('stats','Statystyki')+route('users','Zmień użytkownika')+route('settings','Ustawienia')+'</div></div></section>'
@@ -182,13 +244,20 @@ function users(){
  return '<section class="screen narrow">'+head('Zmień użytkownika','Wybierz profil lub dodaj nowy. Każdy ma własne punkty, zwierzęta i postępy.')+'<div class="panel stack switcher">'+state.profiles.map(p=>'<div class="row"><span class="row">'+avatar(p.avatar)+'<span><strong>'+esc(p.name)+'</strong><br><small>Klasa '+p.grade+(p.id===state.active?' · aktywny':'')+'</small></span></span><div class="actions">'+button('switch',p.id===state.active?'Wybrany':'Wybierz',{val:p.id,disabled:p.id===state.active,label:p.id===state.active?'Wybrany profil: '+esc(p.name):'Wybierz profil: '+esc(p.name)})+button('delete','Usuń',{val:p.id,class:'danger',label:'Usuń profil '+esc(p.name)})+'</div></div>').join('')+'</div><form id="new-profile" class="panel stack"><label class="form-row">Imię lub pseudonim nowego profilu<input name="name" maxlength="28" required></label><div><button class="primary" type="submit">Dodaj profil</button></div></form></section>'
 }
 function settings(){
- return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+route('users','Zarządzaj profilami')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
+ return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+button('vault',state.vault?'Pobierz zaszyfrowaną kopię haseł':'Włącz kopię haseł i pobierz klucz rodzica')+route('users','Zarządzaj profilami')+button('link-profile','Link do logowania na drugim telefonie')+button('export-one','Zapisz mój profil na drugi telefon')+button('import-one','Wczytaj mój profil z pliku')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
 }
 function render(scroll=false){
  const p=active()
  document.documentElement.dataset.accent=state.accent??'blue'
  document.documentElement.dataset.theme=state.theme
  document.documentElement.dataset.motion=state.motion?'on':'off'
+ if(unlocked!==p.id){
+  if(pendingLink){$('top').innerHTML='';$('bottom').innerHTML='';$('main').innerHTML='<form id="cloud-login" class="screen narrow panel stack"><h1>Otwórz profil z linku</h1><label>Hasło profilu <input type="password" name="password" required autocomplete="current-password"></label><button class="primary">Zaloguj się</button>'+button('cancel-link','Wróć do lokalnych profili')+'</form>';return}
+  const candidate=state.profiles.find(x=>x.id===loginTarget)??p
+  $('top').innerHTML='';$('bottom').innerHTML='';$('menu').innerHTML=''
+  $('main').innerHTML='<section class="screen narrow panel stack"><h1>Wybierz swój profil</h1><div class="choice">'+state.profiles.map(x=>button('login-profile',esc(x.name),{val:x.id,pressed:x.id===candidate.id,class:x.id===candidate.id?'selected':''})).join('')+'</div><form class="stack" id="login-form"><label class="form-row">'+(candidate.lock?'Hasło profilu':'Ustal pierwsze hasło')+' · '+esc(candidate.name)+'<input name="password" type="password" required autocomplete="'+(candidate.lock?'current-password':'new-password')+'"></label><small>Od 1 do 4 znaków</small><button class="primary">'+(candidate.lock?'Zaloguj się':'Zapisz hasło i wejdź')+'</button></form>'+button('import-one','Wczytaj swój profil z pliku')+'</section>'
+  return
+ }
  header(p)
  const views={inventory,learn,setup,task:taskScreen,result,shop,pets,stats,rank:rankScreen,profile:profileScreen,users,settings,challenges:p=>'<section class="screen narrow">'+head('Codzienne wyzwania','Klasa '+active().grade+' · Zmiana wyzwań o północy czasu polskiego.')+challengeCards(p,false)+'</section>'}
  $('main').innerHTML=views[page](p)
@@ -214,7 +283,7 @@ function check(){
  render()
  if(session.ok&&stored){
   const newRank=rank(p).index
-  toast(newRank>oldRank?'Nowa ranga! '+ranks[newRank]:signedPoints(pointsForAnswer(true))+' pkt',true)
+  toast(newRank>oldRank?'Nowa ranga! '+ranks[newRank]:signedPoints(pointsForAnswer(true,level))+' pkt',true)
  }
  $('main').querySelector('[data-action="next"]').focus()
 }
@@ -248,6 +317,26 @@ function animatePet(i,action,message){
 }
 const palettes={blue:'Niebieski',purple:'Fioletowy',green:'Zielony',berry:'Malinowy'}
 const actions={
+ 'vault':async()=>{
+  if(!state.vault){
+   const keys=await createFamilyVault()
+   state.vault={publicKey:keys.publicKey,entries:{}}
+   await rememberPassword(active(),loginPin)
+   if(!save())return
+   downloadJson('klucz-rodzica.json',{privateKey:keys.privateKey})
+   render();toast('Zachowaj osobno pobrany klucz. Kolejne hasła zapiszą się przy logowaniu.')
+  }else downloadJson('zaszyfrowane-hasla-rodziny.json',state.vault)
+ },
+ 'cancel-link':()=>{pendingLink=null;history.replaceState(null,'',location.pathname+location.search);render()},
+ 'link-profile':()=>connectProfile().catch(()=>toast('Nie udało się utworzyć linku. Sprawdź połączenie i spróbuj ponownie.')),
+
+ 'login-profile':id=>{loginTarget=id;render()},
+ 'import-one':()=>$('transfer').click(),
+ 'export-one':()=>{
+  const url=URL.createObjectURL(new Blob([JSON.stringify({...state,vault:undefined,links:undefined,profiles:[active()]})],{type:'application/json'}))
+  const a=document.createElement('a');a.href=url;a.download='moj-profil.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)
+ },
+
  grade:v=>{active().grade=Number(v);save();go('learn')},
  accent:v=>{if(Object.hasOwn(palettes,v)){state.accent=v;save();render()}},
 
@@ -264,9 +353,9 @@ const actions={
   render();toast('Kupiono: '+getSupply(id).name)
  },
  care:v=>{
-  const [i,a,item]=v.split(':'), p=active(), pet=p.pets[i], toys=p.toys,inventory=p.supplies
+  const [i,a,item]=v.split(':'), p=active(), pet=p.pets[i], toys=p.toys,inventory=p.supplies,credits=p.credits
   if(!care(p,+i,a,Date.now(),item)){render();return}
-  if(!save()){p.pets[i]=pet;p.toys=toys;p.supplies=inventory;return}
+  if(!save()){p.pets[i]=pet;p.toys=toys;p.supplies=inventory;p.credits=credits;return}
   animatePet(+i,a,{food:'Smacznego! Wykorzystano '+feedingCost+' poprawnych odpowiedzi.',play:'Ale zabawa!',sleep:'Dobrej drzemki!',wake:'Pobudka!'}[a])
  },
  claim:v=>{const p=active();if(claim(p,active().grade,v)){save();render();toast('Wyzwanie ukończone! Nagroda odebrana.',true)}},
@@ -276,13 +365,14 @@ const actions={
  switch:v=>{
   const p=state.profiles.find(profile=>profile.id===v)
   if(!p)return
+  unlocked=null;loginTarget=p.id
   const previous=state.active
   state.active=p.id
   if(!save()){state.active=previous;return}
   fx=null
   go('learn')
  },
- delete:v=>{const p=state.profiles.find(x=>x.id===v);confirmAction('Usunąć profil „'+p.name+'” wraz z postępami?',()=>{
+ delete:v=>{const p=state.profiles.find(x=>x.id===v);if(p.id!==unlocked){toast('Zaloguj się do tego profilu, aby go usunąć.');return}confirmAction('Usunąć profil „'+p.name+'” wraz z postępami?',()=>{
   state.profiles=state.profiles.filter(x=>x.id!==v)
   if(!state.profiles.length)state.profiles.push(profile())
   if(state.active===v)state.active=state.profiles[0].id
@@ -306,7 +396,46 @@ document.addEventListener('input',e=>{
  if(e.target.id==='answer'&&session&&!session.checked) session.input=e.target.value
  if(e.target.id==='profile-name'&&draft)draft.name=e.target.value
 })
-document.addEventListener('submit',e=>{
+document.addEventListener('submit',async e=>{
+ if(e.target.id==='cloud-login'){
+  e.preventDefault()
+  const pw=new FormData(e.target).get('password')
+  try{
+   const api=await openSync(pendingLink,pw),{profile:p,tag}=await api.read()
+   if(!valid({...state,active:p.id,profiles:[p]})||!p.lock||!await verifyProfile(p,pw))throw Error()
+   if(state.links?.[p.id]?.dirty&&!confirm('Pobrać wersję z drugiego telefonu i zastąpić lokalne niezsynchronizowane zmiany?'))return
+   state.profiles=state.profiles.filter(x=>x.id!==p.id).concat(p)
+   state.active=p.id;(state.links??={})[p.id]={token:pendingLink,tag}
+   localStorage.setItem(storage,JSON.stringify(state))
+   await rememberPassword(p,pw);localStorage.setItem(storage,JSON.stringify(state))
+   loginPin=pw;unlocked=p.id;cloud={api,id:p.id};pendingLink=null
+   history.replaceState(null,'',location.pathname+location.search);go('learn')
+  }catch{toast('Sprawdź hasło, link do profilu i połączenie z internetem.')}
+  return
+ }
+ if(e.target.id==='login-form'){
+  e.preventDefault()
+  const p=state.profiles.find(x=>x.id===loginTarget)??active(),pw=new FormData(e.target).get('password')
+  if(!(await verifyProfile(p,pw))){toast('Sprawdź hasło (1–4 znaki).');return}
+  cloud=null;loginPin=pw
+  const meta=state.links?.[p.id]
+  if(meta){
+   try{
+    const api=await openSync(meta.token,pw)
+    if(!meta.dirty){
+     const remote=await api.read()
+     if(remote.profile.id!==p.id||!valid({...state,active:p.id,profiles:[remote.profile]}))throw Error()
+     state.profiles=state.profiles.map(x=>x.id===p.id?remote.profile:x);meta.tag=remote.tag
+    }
+    cloud={api,id:p.id}
+   }catch{toast('Otwarto zapis lokalny. Ponów logowanie po połączeniu z internetem.')}
+  }
+  await rememberPassword(p,pw)
+  state.active=p.id
+  if(!save())return
+  unlocked=p.id;if(meta?.dirty)syncSave();loginTarget=null;go('learn');return
+ }
+
  if(e.target.id==='answer-form'){e.preventDefault();check();return}
  if(!['new-profile','profile-form'].includes(e.target.id))return
  e.preventDefault()
@@ -330,6 +459,20 @@ document.addEventListener('change',async e=>{
  }
  if(e.target.id==='motion'){state.motion=e.target.checked;save();render()}
  if(e.target.dataset.avatar&&draft){draft.avatar[e.target.dataset.avatar]=+e.target.value;$('avatar-live').innerHTML=avatar(draft.avatar)}
+ if(e.target.id==='transfer'){
+  const file=e.target.files[0];e.target.value='';if(!file)return
+  try{
+   const data=JSON.parse(await file.text())
+   if(!valid(data)||data.profiles.length!==1||!data.profiles[0].lock)throw Error()
+   const incoming=data.profiles[0],existing=state.profiles.find(x=>x.id===incoming.id)
+   const pw=prompt('Wpisz hasło przenoszonego profilu')
+   if(!pw||!await verifyProfile(incoming,pw)||(existing&&!await verifyProfile(existing,pw))){toast('Niepoprawne hasło.');return}
+   confirmAction('Wczytać profil '+incoming.name+' z tego pliku? Zapis tego samego profilu zostanie zastąpiony.',()=>{
+    state.profiles=state.profiles.filter(x=>x.id!==incoming.id).concat(incoming);state.active=incoming.id;unlocked=incoming.id;loginPin=pw;cloud=null
+    save();go('learn')
+   })
+  }catch{toast('Wybierz plik zapisany opcją „Zapisz mój profil na drugi telefon”.')}
+ }
  if(e.target.id==='backup'){
   const file=e.target.files[0];e.target.value='';if(!file)return
   try{
@@ -337,7 +480,7 @@ document.addEventListener('change',async e=>{
    if(!valid(imported))throw Error('invalid')
    confirmAction('Zastąpić wszystkie profile i ustawienia danymi z kopii?',()=>{
     const previous=state
-    state=imported
+    state=imported;unlocked=null;loginTarget=null
     if(save()){syncWakeLock();go('learn');toast('Kopia zaimportowana.')}
     else state=previous
    })
@@ -374,4 +517,11 @@ window.addEventListener('pageshow',syncWakeLock)
 render()
 syncWakeLock()
 if(loadError)toast('Nie udało się odczytać wcześniejszego zapisu. Możesz przywrócić kopię w ustawieniach.')
-if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{})
+if('serviceWorker' in navigator){
+ const hadController=!!navigator.serviceWorker.controller
+ let reloading=false
+ navigator.serviceWorker.addEventListener('controllerchange',()=>{
+  if(hadController&&!reloading){reloading=true;location.reload()}
+ })
+ navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{})
+}

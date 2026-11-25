@@ -27,10 +27,10 @@ export function buySupply(p,id){
  return true
 }
 export const ranks=['🌱 Początkujący','🥉 Uczeń matematyki','🥈 Specjalista','🥇 Ekspert','🏆 Mistrz matematyki','💎 Matematyczny geniusz','👑 Legenda matematyki']
-export const thresholds=[0,1,2,4,6,8,activeTopics.length]
+export const thresholds=[0,1,2,4,6,8,11]
 const dayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw'})
 export const today=now=>dayFormat.format(now)
-export const pointsForAnswer=correct=>correct?10:-5
+export const pointsForAnswer=(correct,l=4)=>correct?(l<=3?8:l===4?10:13):(l<=3?-4:l===4?-5:-7)
 export const feedingCost=15
 export const config=()=>({type:'preset',preset:0,face:0,hair:0,shirt:0,accessory:0,pet:0})
 export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:activeGrade,coins:0,food:0,supplies:{},toys:0,correct:0,stats:{},daily:{},pets:{}})
@@ -58,16 +58,17 @@ export function dailyStats(p,g,date=today()){
  return p.daily[date+':'+g]??{any:0,correct:0,streak:0,best:0,topics:{},claimed:[]}
 }
 export const value=(d,c)=>c.id==='streak'?d.best:c.id==='topic'?(d.topics[c.category]??0):d[c.id]
-export function gradeAnswer(p,g,id,l,ok,date=today()){
+export function gradeAnswer(p,g,id,l,ok,date=today(),now=Date.now()){
  const rows=record(p,g,id)
  p.stats[key(g,id)]=rows
  rows[l-1][0]++
  const d=dailyStats(p,g,date)
  p.daily[date+':'+g]=d
  d.any++
- p.coins+=pointsForAnswer(ok)
+ p.coins+=pointsForAnswer(ok,l)
  if(!ok){d.streak=0;return}
  rows[l-1][1]++
+ p.credits=[...recentCredits(p,now),now]
  p.correct++
  if(p.correct%7===0)p.toys++
  d.correct++
@@ -87,20 +88,23 @@ export function buy(p,i){
  const item=animals[i]
  if(!item||p.pets[i]||p.coins<item[1])return false
  p.coins-=item[1]
- p.pets[i]={food:75,happy:75,energy:75,sleep:0,updated:Date.now()}
+ p.pets[i]={scale:150,pricePaid:item[1],food:0,happy:112.5,energy:112.5,sleep:0,updated:Date.now()}
  return true
 }
-export function feedingStatus(p,date=today()){
- let correct=0
- for(let grade=1;grade<grades.length;grade++)correct+=dailyStats(p,grade,date).correct
+const day=86400000
+const recentCredits=(p,now)=>(p.credits??[]).filter(t=>t>now-day&&t<=now)
+export function feedingStatus(p,now=Date.now()){
  const pets=Object.values(p.pets)
- const fed=pets.filter(pet=>pet.fedOn===date).length
- return {fed,total:pets.length,available:Math.max(0,correct-fed*feedingCost)}
+ return {fed:pets.filter(pet=>pet.fedAt>now-day).length,total:pets.length,available:recentCredits(p,now).length}
 }
-export function readPet(pet,now=Date.now(),date=today(now)){
- const elapsed=Math.max(0,Math.floor((now-pet.updated)/3600000))
- const sleep=pet.sleep>now
- return {...pet,food:pet.fedOn===date?100:Math.max(25,Math.min(45,pet.food)-2*elapsed),happy:Math.max(25,pet.happy-elapsed),energy:pet.sleep&&!sleep?100:Math.max(25,pet.energy-elapsed),sleep:sleep?pet.sleep:0}
+export function readPet(pet,now=Date.now()){
+ const scale=pet.scale===150?1:1.5
+ const elapsed=Math.max(0,now-pet.updated)/day
+ const decayed=(v,rate)=>Math.max(0,v*scale-rate*elapsed)
+ const woke=pet.sleep&&pet.sleep<=now
+ return {...pet,scale:150,food:decayed(pet.food,150),happy:decayed(pet.happy,75),
+  energy:woke?Math.max(0,150-75*(now-pet.sleep)/day):decayed(pet.energy,75),
+  sleep:woke?0:pet.sleep,updated:now}
 }
 export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'rewardToy'){
  if(!p.pets[i])return false
@@ -108,16 +112,17 @@ export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'reward
  const pet=readPet(p.pets[i],now,date)
  const item=getSupply(id)
  if(action==='food'||action==='play'){
-  if(item?.action!==action||(item.id!=='meal'&&stock(p,item)<=0))return false
+  if(item?.action!==action||item.id==='meal'||stock(p,item)<=0)return false
  }
- if(action==='wake'&&pet.sleep){pet.sleep=0;pet.energy=Math.min(100,pet.energy+12)}
+ if(action==='wake'&&pet.sleep){pet.sleep=0;pet.energy=Math.min(150,pet.energy+18)}
  else if(pet.sleep)return false
- else if(action==='food'&&pet.fedOn!==date&&feedingStatus(p,date).available>=feedingCost){
-  pet.fedOn=date
-  pet.food=100
-  pet.happy=Math.min(100,pet.happy+item.happy)
+ else if(action==='food'&&!(pet.fedAt>now-day)&&feedingStatus(p,now).available>=feedingCost){
+  pet.fedAt=now
+  p.credits=recentCredits(p,now).slice(feedingCost)
+  pet.food=150
+  pet.happy=Math.min(150,pet.happy+1.5*item.happy)
  }
- else if(action==='play'&&pet.happy<100&&pet.energy>=30){pet.happy=Math.min(100,pet.happy+item.happy);pet.energy-=item.energy}
+ else if(action==='play'&&pet.happy<150&&pet.energy>=45){pet.happy=Math.min(150,pet.happy+1.5*item.happy);pet.energy-=1.5*item.energy}
  else if(action==='sleep'){pet.sleep=now+120000}
  else return false
  if(action==='food'||action==='play'){
@@ -132,8 +137,8 @@ const obj=o=>o!==null&&typeof o==='object'&&!Array.isArray(o)
 export function valid(data){
  const validRows=r=>Array.isArray(r)&&r.length===5&&r.every(x=>Array.isArray(x)&&x.length===2&&int(x[0])&&int(x[1],x[0]))
  const validStats=o=>obj(o)&&Object.entries(o).every(([k,v])=>{const [g,id]=k.split(':');return grades[g]?.some(c=>c.id===id)&&validRows(v)})
- const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>int(p[k],100))&&int(p.updated)&&int(p.sleep)&&(p.fedOn===undefined||typeof p.fedOn==='string'&&/^\d{4}-\d\d-\d\d$/.test(p.fedOn)))
+ const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=(p.scale===150?150:100))&&int(p.updated)&&int(p.sleep)&&(p.fedOn===undefined||typeof p.fedOn==='string'&&/^\d{4}-\d\d-\d\d$/.test(p.fedOn)))
  const validDaily=o=>obj(o)&&Object.entries(o).every(([k,v])=>/^\d{4}-\d\d-\d\d:[1-8]$/.test(k)&&obj(v)&&['any','correct','streak','best'].every(s=>int(v[s]))&&obj(v.topics)&&Object.values(v.topics).every(n=>int(n))&&Array.isArray(v.claimed)&&v.claimed.every(n=>int(n,2)))
  const validAvatar=(a,p)=>obj(a)&&['preset','custom','pet'].includes(a.type)&&int(a.preset,5)&&['face','hair','shirt','accessory'].every(k=>int(a[k],3))&&int(a.pet,17)&&(a.type!=='pet'||!!p.pets[a.pet])
- return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&Number.isSafeInteger(p.coins)&&['food','toys','correct'].every(k=>int(p[k]))&&(p.supplies===undefined||obj(p.supplies)&&Object.entries(p.supplies).every(([id,n])=>getSupply(id)?.price&&int(n)))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
+ return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&Number.isSafeInteger(p.coins)&&['food','toys','correct'].every(k=>int(p[k]))&&(p.supplies===undefined||obj(p.supplies)&&Object.entries(p.supplies).every(([id,n])=>getSupply(id)?.price&&int(n)))&&(p.credits===undefined||Array.isArray(p.credits)&&p.credits.every(t=>int(t)))&&(p.lock===undefined||obj(p.lock)&&/^[0-9a-f]{32}$/.test(p.lock.salt)&&/^[0-9a-f]{64}$/.test(p.lock.digest))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
 }

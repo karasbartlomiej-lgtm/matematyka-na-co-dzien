@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {grades,activeGrade,activeTopics,exercise,matches,parse} from '../dist/math.mjs'
-import {animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
+import {buySupply,pointsForAnswer,animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
 
 const placeNames=[
  'jedności','dziesiątek','setek','tysięcy','dziesiątek tysięcy','setek tysięcy',
@@ -21,7 +21,7 @@ function solvePlaceValue(prompt){
  return prompt.startsWith('Jaka cyfra')?digit:Number(String(digit)+'0'.repeat(offset))
 }
 assert.equal(activeGrade,4)
-assert.equal(activeTopics.length,11)
+assert.equal(activeTopics.length,12)
 assert(activeTopics.some(topic=>topic.id==='placeValue'))
 assert.equal(parse('1 234 567 890'),1234567890)
 assert.equal(parse('1\u202f234\u202f567\u202f890'),1234567890)
@@ -89,7 +89,7 @@ try{
    if(chooseType){chooseType=false;return (type+0.5)/orderTypes.length}
    return i/100
   }
-  const q=exercise('order',4,3)
+  const q=exercise('order',4,4)
   assert.match(q.prompt,pattern)
   const result=solveOrder(q.prompt)
   assert.equal(parse(q.answer),result)
@@ -119,10 +119,10 @@ for(const [level,place] of [[1,'jedności'],[1,'dziesiątek'],[3,'milionów'],[5
 }
 
 let samples=0, variants=0
-for(let g=1;g<=8;g++)for(const {id} of grades[g])for(let l=1;l<=5;l++){
+for(let g=1;g<=8;g++)for(const {id} of grades[g])for(let l=3;l<=5;l++){
  variants++
  for(let i=0;i<80;i++){
-  const q=exercise(id,g,l), answer=id==='order'&&g===4&&l===3?solveOrder(q.prompt):solve(q),actual=parse(q.answer)
+  const q=exercise(id,g,l), answer=id==='order'&&g===4&&l===4?solveOrder(q.prompt):solve(q),actual=parse(q.answer)
   if(typeof answer==='number')assert(Math.abs(answer-actual)<1e-9,JSON.stringify(q))
   else assert.equal(actual,answer,q.prompt)
   assert(matches(q.answer,q.answer),q.prompt)
@@ -138,7 +138,7 @@ assert.equal(matches('1,2,3','1,2'),false)
 const p=profile('Test A'), b=profile('Test B'), date='2026-11-21'
 for(let i=0;i<12;i++)gradeAnswer(p,4,'add',3,true,date)
 assert.deepEqual(record(p,4,'add')[2],[12,12])
-assert.deepEqual([p.coins,p.food,p.toys],[120,0,1])
+assert.deepEqual([p.coins,p.food,p.toys],[96,0,1])
 assert.equal(progress(record(p,4,'add')),100)
 assert.equal(rank(p).index,1)
 assert.equal(rank(b).index,0)
@@ -152,7 +152,7 @@ assert.equal(progress([[100,100],[20,20],[1,1],[0,0],[0,0]])<100,true)
 assert.equal(progress([[0,0],[0,0],[13,10],[0,0],[0,0]])<100,true)
 assert.equal(progress(record(p,3,'add')),0)
 gradeAnswer(p,4,'add',3,false,date)
-assert.equal(p.coins,115)
+assert.equal(p.coins,92)
 assert.equal(dailySet(4,date).length,3)
 assert.notDeepEqual(dailySet(4,date),dailySet(4,'2026-11-22'))
 assert(claim(p,4,'any',date))
@@ -169,15 +169,6 @@ for(let i=0;i<animals.length;i++){
  assert(!buy(p,i))
 }
 const now=Date.parse(date+'T12:00:00Z')
-assert(care(p,0,'food',now))
-assert(care(p,0,'play',now))
-assert.equal(p.pets[0].food,100)
-assert.equal(p.pets[0].happy,100)
-assert(care(p,0,'sleep',now))
-assert(!care(p,0,'play',now))
-assert.equal(readPet(p.pets[0],now+120001).energy,100)
-assert(care(p,0,'wake',now+1))
-assert.equal(readPet(p.pets[0],now+999e7).food,25)
 assert.deepEqual([b.coins,b.food,b.toys,Object.keys(b.pets).length],[0,0,0,0])
 const snapshot={version:1,active:p.id,profiles:[p,b],theme:'dark',motion:false}
 assert(valid(JSON.parse(JSON.stringify(snapshot))))
@@ -189,33 +180,42 @@ assert(!valid({...snapshot,profiles:[p,p]}))
 assert(valid({...snapshot,profiles:[{...p,coins:-5},b]}))
 assert(!valid({...snapshot,profiles:[{...p,coins:-0.5},b]}))
 
+for(const [level,good,bad] of [[3,8,-4],[4,10,-5],[5,13,-7]]){
+ assert.equal(pointsForAnswer(true,level),good)
+ assert.equal(pointsForAnswer(false,level),bad)
+}
 const caretaker=profile('Opiekun')
-caretaker.coins=150
+caretaker.coins=400
 assert(buy(caretaker,0))
 assert(buy(caretaker,1))
-const evening=Date.parse('2026-11-24T22:59:00Z')
-const morning=Date.parse('2026-11-24T23:00:00Z')
-assert.equal(today(evening),'2026-11-24')
-assert.equal(today(morning),'2026-11-25')
-gradeAnswer(caretaker,4,'add',1,false,today(evening))
-assert.equal(caretaker.coins,-5)
-caretaker.food=100 // Legacy reserves cannot replace today's exercises.
-for(let i=0;i<14;i++)gradeAnswer(caretaker,4,'add',1,true,today(evening))
-assert.equal(caretaker.coins,135)
-assert(!care(caretaker,0,'food',evening))
-gradeAnswer(caretaker,2,'add',1,true,today(evening))
-assert.deepEqual(feedingStatus(caretaker,today(evening)),{fed:0,total:2,available:15})
-assert(care(caretaker,0,'food',evening))
-assert.equal(readPet(caretaker.pets[0],evening).food,100)
-assert(!care(caretaker,0,'food',evening))
-assert(!care(caretaker,1,'food',evening))
-for(let i=0;i<15;i++)gradeAnswer(caretaker,2,'add',1,true,today(evening))
-assert(care(caretaker,1,'food',evening))
-assert.deepEqual(feedingStatus(caretaker,today(evening)),{fed:2,total:2,available:0})
-gradeAnswer(caretaker,4,'add',1,true,today(evening))
-assert.deepEqual(feedingStatus(caretaker,today(morning)),{fed:0,total:2,available:0})
-assert(!care(caretaker,0,'food',morning))
-assert(readPet(caretaker.pets[0],morning).food<50)
-const backup={...snapshot,active:caretaker.id,profiles:[caretaker]}
-assert(valid(JSON.parse(JSON.stringify(backup))))
+assert(buySupply(caretaker,'apple'))
+assert(buySupply(caretaker,'ball'))
+const evening=Date.parse('2026-11-24T22:59:00Z'),hour=3600000
+const earn=(n,t)=>{for(let i=0;i<n;i++)gradeAnswer(caretaker,4,'natural',4,true,today(t),t)}
+earn(14,evening)
+assert(!care(caretaker,0,'food',evening,'apple'))
+earn(1,evening)
+assert(!care(caretaker,0,'food',evening,'meal'))
+assert(care(caretaker,0,'food',evening,'apple'))
+assert.equal(caretaker.supplies.apple,0)
+assert.equal(feedingStatus(caretaker,evening).available,0)
+assert.equal(readPet(caretaker.pets[0],evening+12*hour).food,75)
+assert.equal(readPet(caretaker.pets[0],evening+24*hour).food,0)
+assert(buySupply(caretaker,'apple'))
+earn(15,evening+hour)
+assert(!care(caretaker,0,'food',evening+hour,'apple'))
+assert(care(caretaker,0,'sleep',evening+23*hour))
+assert(care(caretaker,0,'food',evening+24*hour,'apple'))
+assert(care(caretaker,0,'play',evening+24*hour,'ball'))
+assert.equal(caretaker.supplies.ball,2)
+const full={scale:150,food:150,happy:150,energy:150,sleep:0,updated:evening}
+assert.equal(readPet(full,evening+24*hour).happy,75)
+assert.equal(readPet(full,evening+48*hour).energy,0)
+assert.equal(readPet(full,evening+48*hour).happy,0)
+assert(valid({...snapshot,active:caretaker.id,profiles:[caretaker]}))
+const {verifyProfile}=await import('../dist/profile-lock.mjs')
+assert(await verifyProfile(caretaker,'12'))
+assert(!await verifyProfile(caretaker,'34'))
+assert(await verifyProfile(caretaker,'12'))
+assert(!await verifyProfile(caretaker,'12345'))
 console.log(samples+' zadań, '+variants+' zestawień klasy, kategorii i trudności. Testy logiki gry i kopii zakończone pomyślnie.')

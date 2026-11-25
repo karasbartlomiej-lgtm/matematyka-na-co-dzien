@@ -1,10 +1,10 @@
 const c=(id,name,icon)=>({id,name,icon})
 const topics=Object.fromEntries([
-c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓'),c('placeValue','System dziesiętny','10ⁿ')].map(x=>[x.id,x]))
-export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo','placeValue add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
+c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓'),c('natural','Liczby naturalne','≶'),c('placeValue','System dziesiętny','10ⁿ')].map(x=>[x.id,x]))
+export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo','natural placeValue add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
 export const activeGrade=4
 export const activeTopics=grades[activeGrade]
-export const levels=['Bardzo łatwy','Łatwy','Średni','Trudny','Ekspert']
+export const levels=['Łatwy','Średni','Trudny']
 const rand=(lo,hi)=>lo+Math.floor(Math.random()*(hi-lo+1))
 const pick=xs=>xs[rand(0,xs.length-1)]
 const gcd=(a,b)=>b?gcd(b,a%b):Math.abs(a)
@@ -106,12 +106,17 @@ function orderMedium(){
 }
 export function exercise(id,g,l){
  if(id==='placeValue'&&g===activeGrade)return decimalSystem(l)
- if(id==='order'&&g===4&&l===3)return orderMedium()
+ if(id==='order'&&g===4&&l===4)return orderMedium()
  const caps=g===1?[5,8,10,15,20]:g===2?[12,20,40,70,100]:g===3?[20,45,100,300,1000]:[30,90,250,800,3000]
  const cap=caps[l-1], a=rand(2,Math.floor(cap/2)),b=rand(1,a),m=rand(2,l+2),n=rand(2,Math.min(g===2?5:10,l+4))
  switch(id){
  case 'add': return task(a+' + '+b,a+b,'Zacznij od '+a+' i dodaj '+b+'.',a+' + '+b+' = '+(a+b)+'.')
  case 'sub': return task(a+' − '+b,a-b,'Od '+a+' odejmij '+b+'.',a+' − '+b+' = '+(a-b)+'.')
+ case 'natural': {
+  const cap=l<=3?9999:l===4?999999:999999999
+  const x=rand(1000,cap),y=pick([x,rand(1000,cap),Math.min(cap,x+rand(1,9)),Math.max(0,x-rand(1,9))])
+  return task(x+'  ?  '+y,x===y?'=':x<y?'<':'>','Najpierw porównaj liczbę cyfr, a potem cyfry od lewej strony.',x===y?'Obie liczby są równe.':Math.max(x,y)+' jest większe od '+Math.min(x,y)+'.')
+ }
  case 'compare': {const x=rand(1,cap),y=rand(Math.max(1,x-3),Math.min(cap,x+3));return task(x+'  ?  '+y,x===y?'=':x<y?'<':'>',x===y?'Obie liczby są równe.':(Math.max(x,y))+' jest większe niż '+Math.min(x,y)+'.','Szersza strona znaku jest zwrócona ku większej liczbie.')}
  case 'count':{const x=rand(2,Math.min(cap,16));return task('Policz kropki\n'+Array.from({length:x},()=> '●').join(' '),x,'Licz po jednej kropce od lewej do prawej.','Ostatnia liczba to '+x+'.')}
  case 'mul':{const x=g>=4&&l>=4?rand(11,l===5?35:19):g===2&&l===5?5:m;return task(x+' × '+n,x*n,'Masz '+n+' grup po '+x+'.',Array(n).fill(x).join(' + ')+' = '+x*n+'.')}

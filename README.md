@@ -1,6 +1,6 @@
 # Matematyka na co dzień
 
-Polskojęzyczna aplikacja PWA do samodzielnego ćwiczenia matematyki w klasie 4. Nie wymaga rejestracji, serwera aplikacyjnego, bazy danych, kompilacji ani zewnętrznych bibliotek.
+Polskojęzyczna aplikacja PWA do samodzielnego ćwiczenia matematyki w klasach 1–8. Trening działa lokalnie. Opcjonalna synchronizacja korzysta z szyfrowanego zapisu online.
 
 ## Pierwsze uruchomienie
 
@@ -19,11 +19,13 @@ Na iPhonie otwórz stronę w Safari, wybierz **Udostępnij → Dodaj do ekranu p
 
 ## Nauka, zwierzęta i profile
 
-- W grze dostępne są kategorie klasy 4, w tym system dziesiętny od jedności do miliardów. Postępy z wcześniejszych wersji są zachowane w danych profilu. Rangi obliczają się na podstawie bieżącego zakresu klasy 4.
-- Za każdą poprawną odpowiedź przyznawane jest 10 monet. Co 3 poprawne odpowiedzi dają porcję jedzenia, a co 7 jedną zabawkę. Zakupy są wirtualne.
+- Klasa 4 obejmuje system dziesiętny i porównywanie liczb naturalnych. Dostępne poziomy to Łatwy (+8/−4), Średni (+10/−5) i Trudny (+13/−7).
+- Posiłek wymaga produktu ze sklepu i 15 niewykorzystanych poprawnych odpowiedzi z ostatnich 24 godzin. Za każde siedem poprawnych odpowiedzi profil otrzymuje zabawkę.
+- Ustawienia → Link do logowania na drugim telefonie pozwala przenieść się na inne urządzenie. Otwórz prywatny link i podaj hasło. Przy pracy offline postępy zapisują się lokalnie. Konflikt wersji wymaga wyboru wersji po zachowaniu kopii.
+- Opcjonalna kopia haseł w ustawieniach wydaje osobny plik klucza rodzica i zbiera zaszyfrowane hasła przy kolejnych logowaniach na tym urządzeniu. Przechowuj klucz osobno od kopii. Odczyt wymaga obu plików (RSA-OAEP, SHA-256, szyfrogram zakodowany szesnastkowo).
 - Każdą z trzech nagród dziennych można odebrać raz na profil. Wyzwania i liczniki odświeżają się o północy w strefie Europe/Warsaw.
-- Opanowanie wymaga minimum 12 zadań na poziomach 3–5, co najmniej 10 poprawnych odpowiedzi i skuteczności co najmniej 80% na tych poziomach. Ranga jest liczona z aktualnej liczby opanowanych kategorii. Po spadku skuteczności może się zmienić.
-- Wartości potrzeb zwierząt mają dolną granicę 25%. Zwierzęta pozostają w kolekcji. Drzemka trwa dwie minuty, a zwierzę można wcześniej obudzić.
+- Opanowanie wymaga minimum 12 zadań na dostępnych poziomach, co najmniej 10 poprawnych odpowiedzi i skuteczności co najmniej 80% na tych poziomach. Ranga jest liczona z aktualnej liczby opanowanych kategorii. Po spadku skuteczności może się zmienić.
+- Zakres potrzeb wynosi 0–150. Najedzenie maleje liniowo przez 24 godziny, szczęście i energia przez 48 godzin. Zwierzęta pozostają w kolekcji. Drzemka trwa dwie minuty, a zwierzę można wcześniej obudzić.
 - W ustawieniach można zmienić motyw, ograniczyć animacje, zarządzać profilami i zapisać komplet danych do pliku JSON. Import zastępuje wszystkie obecne profile dopiero po potwierdzeniu. Usuwanie profilu i reset jego postępów również wymagają potwierdzenia. W trakcie treningu niesprawdzona odpowiedź znajduje się w pamięci bieżącej karty.
 
 ## Źródła programu nauczania
