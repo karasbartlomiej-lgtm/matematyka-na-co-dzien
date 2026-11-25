@@ -4,6 +4,28 @@ export const animals=[
  ['Lis',250],['Pingwin',300],['Lew',400],['Tygrys',450],['Słoń',550],['Panda',600],
  ['Tyranozaur',800],['Brachiozaur',850],['Jednorożec',1000],['Kosmita',1100],['Feniks',1300],['Smok',1500]]
 export const groups=['Zwierzęta domowe','Dzikie zwierzęta','Fantastyczne stworzenia']
+export const supplies=[
+ {id:'meal',name:'Porcja karmy',icon:'🥣',action:'food',food:28,happy:5,stock:'food'},
+ {id:'apple',name:'Jabłko',icon:'🍎',action:'food',food:18,happy:4,price:10,uses:1},
+ {id:'crunch',name:'Chrupki',icon:'🍪',action:'food',food:25,happy:10,price:18,uses:1},
+ {id:'feast',name:'Miseczka przysmaków',icon:'🍲',action:'food',food:42,happy:12,price:30,uses:1},
+ {id:'rewardToy',name:'Zabawka z treningu',icon:'🧸',action:'play',happy:30,energy:8,stock:'toys'},
+ {id:'ball',name:'Piłka',icon:'⚽',action:'play',happy:20,energy:6,price:20,uses:3},
+ {id:'teddy',name:'Pluszak',icon:'🧸',action:'play',happy:28,energy:4,price:35,uses:3},
+ {id:'frisbee',name:'Frisbee',icon:'🥏',action:'play',happy:38,energy:12,price:45,uses:3}
+]
+export const getSupply=id=>supplies.find(item=>item.id===id)
+export const stock=(p,item)=>item.stock?p[item.stock]:(p.supplies?.[item.id]??0)
+export const totalStock=(p,action)=>supplies.reduce((sum,item)=>sum+(item.action===action?stock(p,item):0),0)
+export function buySupply(p,id){
+ const item=getSupply(id)
+ if(!item?.price||p.coins<item.price)return false
+ const quantity=stock(p,item)+item.uses
+ if(!Number.isSafeInteger(quantity))return false
+ p.coins-=item.price
+ p.supplies={...p.supplies,[id]:quantity}
+ return true
+}
 export const ranks=['🌱 Początkujący','🥉 Uczeń matematyki','🥈 Specjalista','🥇 Ekspert','🏆 Mistrz matematyki','💎 Matematyczny geniusz','👑 Legenda matematyki']
 export const thresholds=[0,1,2,4,6,8,activeTopics.length]
 const dayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw'})
@@ -11,7 +33,7 @@ export const today=now=>dayFormat.format(now)
 export const pointsForAnswer=correct=>correct?10:-5
 export const feedingCost=15
 export const config=()=>({type:'preset',preset:0,face:0,hair:0,shirt:0,accessory:0,pet:0})
-export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:activeGrade,coins:0,food:0,toys:0,correct:0,stats:{},daily:{},pets:{}})
+export const profile=(name='Gracz')=>({id:crypto.randomUUID(),name,avatar:config(),grade:activeGrade,coins:0,food:0,supplies:{},toys:0,correct:0,stats:{},daily:{},pets:{}})
 export const initial=()=>{const p=profile();return {version:1,active:p.id,theme:'light',keepScreenAwake:false,motion:!matchMedia('(prefers-reduced-motion: reduce)').matches,profiles:[p]}}
 export const key=(g,id)=>g+':'+id
 export const record=(p,g,id)=>p.stats[key(g,id)]??Array.from({length:5},()=>[0,0])
@@ -22,7 +44,7 @@ export function progress(rows){
  const mastery=Math.min(1,attempts/12,correct/10,accuracy/.8)
  return Math.min(mastery===1?100:99,Math.round(mastery*100))
 }
-export const rank=p=>{const total=activeTopics.filter(topic=>progress(record(p,activeGrade,topic.id))===100).length;return {total,index:thresholds.findLastIndex(t=>total>=t)}}
+export const rank=p=>{const total=grades.slice(1).reduce((n,list,i)=>n+list.filter(topic=>progress(record(p,i+1,topic.id))===100).length,0);return {total,index:thresholds.findLastIndex(t=>total>=t)}}
 export function dailySet(g,date){
  const rotation=Number(date.replaceAll('-',''))%3
  const category=grades[g][(Number(date.slice(-2))+g)%grades[g].length]
@@ -80,20 +102,28 @@ export function readPet(pet,now=Date.now(),date=today(now)){
  const sleep=pet.sleep>now
  return {...pet,food:pet.fedOn===date?100:Math.max(25,Math.min(45,pet.food)-2*elapsed),happy:Math.max(25,pet.happy-elapsed),energy:pet.sleep&&!sleep?100:Math.max(25,pet.energy-elapsed),sleep:sleep?pet.sleep:0}
 }
-export function care(p,i,action,now=Date.now()){
+export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'rewardToy'){
  if(!p.pets[i])return false
  const date=today(now)
  const pet=readPet(p.pets[i],now,date)
+ const item=getSupply(id)
+ if(action==='food'||action==='play'){
+  if(item?.action!==action||(item.id!=='meal'&&stock(p,item)<=0))return false
+ }
  if(action==='wake'&&pet.sleep){pet.sleep=0;pet.energy=Math.min(100,pet.energy+12)}
  else if(pet.sleep)return false
  else if(action==='food'&&pet.fedOn!==date&&feedingStatus(p,date).available>=feedingCost){
   pet.fedOn=date
   pet.food=100
-  pet.happy=Math.min(100,pet.happy+5)
+  pet.happy=Math.min(100,pet.happy+item.happy)
  }
- else if(action==='play'&&p.toys&&pet.happy<100&&pet.energy>=30){p.toys--;pet.happy=Math.min(100,pet.happy+30);pet.energy-=8}
+ else if(action==='play'&&pet.happy<100&&pet.energy>=30){pet.happy=Math.min(100,pet.happy+item.happy);pet.energy-=item.energy}
  else if(action==='sleep'){pet.sleep=now+120000}
  else return false
+ if(action==='food'||action==='play'){
+  if(item.id==='rewardToy')p.toys--
+  else if(item.price)p.supplies={...p.supplies,[id]:stock(p,item)-1}
+ }
  p.pets[i]={...pet,updated:now}
  return true
 }
@@ -105,5 +135,5 @@ export function valid(data){
  const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>int(p[k],100))&&int(p.updated)&&int(p.sleep)&&(p.fedOn===undefined||typeof p.fedOn==='string'&&/^\d{4}-\d\d-\d\d$/.test(p.fedOn)))
  const validDaily=o=>obj(o)&&Object.entries(o).every(([k,v])=>/^\d{4}-\d\d-\d\d:[1-8]$/.test(k)&&obj(v)&&['any','correct','streak','best'].every(s=>int(v[s]))&&obj(v.topics)&&Object.values(v.topics).every(n=>int(n))&&Array.isArray(v.claimed)&&v.claimed.every(n=>int(n,2)))
  const validAvatar=(a,p)=>obj(a)&&['preset','custom','pet'].includes(a.type)&&int(a.preset,5)&&['face','hair','shirt','accessory'].every(k=>int(a[k],3))&&int(a.pet,17)&&(a.type!=='pet'||!!p.pets[a.pet])
- return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&Number.isSafeInteger(p.coins)&&['food','toys','correct'].every(k=>int(p[k]))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
+ return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&Number.isSafeInteger(p.coins)&&['food','toys','correct'].every(k=>int(p[k]))&&(p.supplies===undefined||obj(p.supplies)&&Object.entries(p.supplies).every(([id,n])=>getSupply(id)?.price&&int(n)))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
 }

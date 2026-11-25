@@ -146,7 +146,7 @@ const legacy=profile('Starszy profil')
 legacy.grade=7
 for(let i=0;i<12;i++)gradeAnswer(legacy,7,'pct',3,true,date)
 assert.equal(progress(record(legacy,7,'pct')),100)
-assert.equal(rank(legacy).index,0)
+assert.equal(rank(legacy).index,1)
 assert.equal(record(legacy,activeGrade,'pct')[2][0],0)
 assert.equal(progress([[100,100],[20,20],[1,1],[0,0],[0,0]])<100,true)
 assert.equal(progress([[0,0],[0,0],[13,10],[0,0],[0,0]])<100,true)

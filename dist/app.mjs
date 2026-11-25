@@ -1,5 +1,5 @@
-import { activeGrade, activeTopics, levels, exercise, matches, parse } from './math.mjs'
-import { animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, feedingCost, feedingStatus, pointsForAnswer, valid, today } from './game.mjs'
+import { grades, levels, exercise, matches, parse } from './math.mjs'
+import { supplies, stock, buySupply, getSupply, animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, feedingCost, feedingStatus, pointsForAnswer, valid, today } from './game.mjs'
 
 import { createScreenWakeLock } from './wake-lock.mjs'
 
@@ -42,12 +42,12 @@ const icons={
  profile:'M16 7a4 4 0 1 1-8 0 4 4 0 1 1 8 0z M4 21v-2c0-4 4-6 8-6s8 2 8 6v2z',
  stats:'M3 20h18 M6 16v-5m6 5V4m6 12V8', rank:'M5 3h14v6c0 5-3 7-7 7s-7-2-7-7z M5 6H2v3c0 3 2 4 4 4m13-7h3v3c0 3-2 4-4 4m-6 3v5m-5 0h10',
  users:'M16 17h6m-3-3v6 M13 7a4 4 0 1 1-8 0 4 4 0 1 1 8 0z M2 21v-2c0-4 4-6 8-6 2 0 3 .4 4 1',
- settings:'M4 6h16M4 12h16M4 18h16 M8 3v6m8 0v6m-5 0v6',
+ inventory:'M3 8h18v13H3z M2 4h20v4H2z M9 12h6',settings:'M4 6h16M4 12h16M4 18h16 M8 3v6m8 0v6m-5 0v6',
  menu:'M4 6h16M4 12h16M4 18h16', close:'m6 6 12 12m0-12L6 18', next:'m9 5 7 7-7 7', star:'m12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z'
 }
 const icon=id=>'<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="'+icons[id]+'"/></svg>'
 const nav=[['learn','Nauka'],['challenges','Wyzwania'],['shop','Sklep'],['pets','Zwierzęta'],['profile','Profil']]
-const side=[['learn','Nauka'],['challenges','Codzienne wyzwania'],['shop','Sklep'],['pets','Moje zwierzęta'],['stats','Statystyki'],['rank','Moja ranga'],['profile','Profil'],['users','Zmień użytkownika'],['settings','Ustawienia']]
+const side=[['learn','Nauka'],['challenges','Codzienne wyzwania'],['shop','Sklep'],['pets','Moje zwierzęta'],['inventory','Przedmioty dla zwierząt'],['stats','Statystyki'],['rank','Moja ranga'],['profile','Profil'],['users','Zmień użytkownika'],['settings','Ustawienia']]
 const button=(action,label,opt={})=>'<button type="button" data-action="'+action+'"'+(opt.val!==undefined?' data-value="'+esc(opt.val)+'"':'')+(opt.class?' class="'+opt.class+'"':'')+(opt.label?' aria-label="'+opt.label+'"':'')+(opt.pressed!==undefined?' aria-pressed="'+opt.pressed+'"':'')+(opt.disabled?' disabled':'')+'>'+label+'</button>'
 const route=(id,label,cls='')=>button('go',label,{val:id,class:cls})
 const bar=(n,label='Postęp')=>'<span class="bar" role="progressbar" aria-label="'+esc(label)+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+n+'"><span style="width:'+n+'%"></span></span>'
@@ -107,21 +107,21 @@ function header(p){
  $('menu').innerHTML='<div class="menu-head"><h2>Menu</h2>'+button('close-menu',icon('close'),{class:'icon-btn',label:'Zamknij menu'})+'</div><nav>'+side.map(([id,label])=>route(id,icon(id)+esc(label),page===id?'selected':'')).join('')+'</nav>'
 }
 function challengeCards(p,compact){
- const date=today(),d=dailyStats(p,activeGrade,date)
- return dailySet(activeGrade,date).map(c=>{
+ const date=today(),d=dailyStats(p,active().grade,date)
+ return dailySet(active().grade,date).map(c=>{
   const n=Math.min(c.target,value(d,c)), done=claimed(p,c.id,date)
   return '<article class="'+(compact?'mini-challenge':'challenge')+'"><div class="row"><strong>'+esc(c.name)+'</strong><span class="reward" title="Monety">+'+c.reward+'</span></div>'+bar(100*n/c.target,c.name)+'<small>'+n+' / '+c.target+(done?' · Nagroda odebrana':'')+'</small>'+(!compact&&!done?button('claim','Odbierz nagrodę',{val:c.id,disabled:n<c.target,class:'primary'}):'')+'</article>'
  }).join('')
 }
 function learn(p){
  const r=rank(p)
- return '<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa 4</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+activeGrade+'</small></div><div class="topics">'+activeTopics.map(c=>{
-  const percent=progress(record(p,activeGrade,c.id))
+ return '<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
+  const percent=progress(record(p,active().grade,c.id))
   return button('topic','<span class="symbol" aria-hidden="true">'+c.icon+'</span><strong>'+c.name+'</strong><span class="topic-meta"><small>'+percent+'%</small>'+bar(percent,c.name)+'</span>'+icon('next'),{val:c.id,class:'topic'})
  }).join('')+'</div></section></div><aside class="stack"><section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
 }
 function setup(){
- return '<div class="screen narrow">'+head(chosen.name,'Klasa '+activeGrade+' · '+signedPoints(pointsForAnswer(true))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+1,class:'level '+(level===i+1?'selected':''),pressed:level===i+1})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
+ return '<div class="screen narrow">'+head(chosen.name,'Klasa '+active().grade+' · '+signedPoints(pointsForAnswer(true))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+1,class:'level '+(level===i+1?'selected':''),pressed:level===i+1})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
 }
 function taskScreen(){
  const s=session,q=s.question, comparison=/^[<=>]$/.test(q.answer)
@@ -133,48 +133,64 @@ function result(){
  const score=session.good*pointsForAnswer(true)+(session.done-session.good)*pointsForAnswer(false)
  return '<section class="screen narrow panel result"><div class="symbol" aria-hidden="true">✓</div><h1>Trening ukończony!</h1><p>Dobra robota! Każde zadanie pomaga Ci ćwiczyć.</p><div class="score">'+session.good+'/'+session.done+'</div><p>Poprawne odpowiedzi</p><div class="row">'+coins+' <strong>'+signedPoints(score)+' pkt w tym treningu</strong></div><div class="actions">'+button('again','Nowy trening',{class:'primary'})+route('learn','Wróć do nauki')+'</div></section>'
 }
+const supplyEffects=item=>item.action==='food'
+ ? 'Pełny posiłek (15 odpowiedzi)'+' · Szczęście +'+item.happy
+ : 'Szczęście +'+item.happy+' · Energia −'+item.energy
+const supplyIcon=item=>'<span class="supply-icon" aria-hidden="true">'+item.icon+'</span>'
+function accessoryShop(p){
+ return [['food','Jedzenie'],['play','Zabawki']].map(([action,label])=>'<section class="stack"><h2>'+label+'</h2><div class="grid">'+supplies.filter(item=>item.action===action&&item.price).map(item=>
+  '<article class="pet-card supply-card">'+supplyIcon(item)+'<h3>'+item.name+'</h3><small>'+supplyEffects(item)+'</small><small>'+(
+   action==='food'?'Porcje w zapasie: '+stock(p,item):'Zabawy w zapasie: '+stock(p,item)+' · +'+item.uses+' po zakupie'
+  )+'</small><div class="row">'+coins+' <strong>'+item.price+'</strong></div>'+
+  button('buy-supply',p.coins<item.price?'Brakuje '+format(item.price-p.coins)+' monet':'Kup',{val:item.id,class:'primary',label:'Kup: '+item.name,disabled:p.coins<item.price})+'</article>'
+ ).join('')+'</div></section>').join('')
+}
+function inventory(p){
+ return '<section class="screen stack">'+head('Przedmioty dla zwierząt','Wybierz jedzenie lub zabawki. Kupione przedmioty możesz wykorzystać w zakładce Zwierzęta.')+balance(p)+accessoryShop(p)+route('pets','Moje zwierzęta')+'</section>'
+}
 function shop(p){
- return '<section class="screen"><div class="row spaced">'+head('Sklep ze zwierzętami','Kup towarzysza za monety zdobyte w treningu.')+balance(p)+'</div><div class="choice" aria-label="Kategorie zwierząt">'+groups.map((n,i)=>button('group',n,{val:i,pressed:group===i,class:group===i?'selected':''})).join('')+'</div><div class="grid">'+animals.map(([name,price],i)=>Math.floor(i/6)!==group?'':'<article class="pet-card">'+animal(i,null,true)+'<h3>'+name+'</h3><div class="row">'+coins+' <strong>'+format(price)+'</strong></div>'+button('buy',p.pets[i]?'Kupione':p.coins<price?'Brakuje '+format(price-p.coins)+' monet':'Kup',{val:i,class:'primary',disabled:!!p.pets[i]||p.coins<price})+'</article>').join('')+'</div></section>'
+ return '<section class="screen"><div class="row spaced">'+head('Sklep ze zwierzętami','Kup towarzysza za monety zdobyte w treningu.')+balance(p)+'</div><div class="choice" aria-label="Kategorie zwierząt">'+route('inventory','Przedmioty dla zwierząt')+''+groups.map((n,i)=>button('group',n,{val:i,pressed:group===i,class:group===i?'selected':''})).join('')+'</div><div class="grid">'+animals.map(([name,price],i)=>Math.floor(i/6)!==group?'':'<article class="pet-card">'+animal(i,null,true)+'<h3>'+name+'</h3><div class="row">'+coins+' <strong>'+format(price)+'</strong></div>'+button('buy',p.pets[i]?'Kupione':p.coins<price?'Brakuje '+format(price-p.coins)+' monet':'Kup',{val:i,class:'primary',disabled:!!p.pets[i]||p.coins<price})+'</article>').join('')+'</div></section>'
 }
 function pets(p){
  const now=Date.now(), date=today(now), {fed,total,available}=feedingStatus(p,date)
  const missing=Math.max(0,feedingCost-available)
- return '<section class="screen">'+head('Moje zwierzęta')+'<div class="panel stack"><div class="row spaced"><strong>Poprawne odpowiedzi do wykorzystania: '+format(available)+'</strong><strong>Nakarmione dziś: '+fed+' / '+total+'</strong></div><p>Każde zwierzę potrzebuje co dzień '+feedingCost+' poprawnych odpowiedzi. Po karmieniu odejmujemy je z dziennej puli. Nowy dzień zaczyna się o północy czasu polskiego.</p><small>Zabawki: '+p.toys+' · Drzemka trwa 2 minuty.</small>'+route('learn','Ćwicz i zdobądź odpowiedzi')+'</div>'+(total?'<div class="grid">'+Object.entries(p.pets).map(([i,raw])=>{
+ return '<section class="screen">'+head('Moje zwierzęta')+route('inventory','Przedmioty dla zwierząt')+'<div class="panel stack"><div class="row spaced"><strong>Poprawne odpowiedzi do wykorzystania: '+format(available)+'</strong><strong>Nakarmione dziś: '+fed+' / '+total+'</strong></div><p>Każde zwierzę potrzebuje co dzień '+feedingCost+' poprawnych odpowiedzi. Po karmieniu odejmujemy je z dziennej puli. Nowy dzień zaczyna się o północy czasu polskiego.</p><small>Zabawki: '+p.toys+' · Drzemka trwa 2 minuty.</small>'+route('learn','Ćwicz i zdobądź odpowiedzi')+'</div>'+(total?'<div class="grid">'+Object.entries(p.pets).map(([i,raw])=>{
   const pet=readPet(raw,now,date), fedToday=pet.fedOn===date
   const meter=(label,n)=>'<div><div class="row"><small>'+label+'</small><small>'+n+'%</small></div>'+bar(n,label)+'</div>'
   return '<article class="pet-card">'+animal(+i,pet,true)+'<h3>'+animals[i][0]+(pet.sleep?' · śpi':'')+'</h3>'+
    '<small>'+ (fedToday?'Nakarmiony dziś':missing?'Głodny · brakuje '+missing+' do '+feedingCost+' poprawnych odpowiedzi':pet.sleep?'Głodny · obudź przed karmieniem':'Głodny · posiłek gotowy')+'</small>'+
-   '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div><div class="actions">'+button('care',fedToday?'Nakarmiony':'Nakarm',{val:i+':food',disabled:!!pet.sleep||fedToday||missing>0})+button('care','Baw się',{val:i+':play',disabled:!!pet.sleep||!p.toys||pet.happy===100||pet.energy<30})+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
+   '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div><div class="actions">'+supplies.filter(item=>item.id==='meal'||stock(p,item)>0).map(item=>button('care',item.action==='food'?'Nakarm · '+item.name:'Baw się · '+item.name,{val:i+':'+item.action+':'+item.id,disabled:!!pet.sleep||(item.action==='food'?fedToday||missing>0:pet.happy===100||pet.energy<30)})).join('')+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
  }).join('')+'</div>':'<div class="panel empty stack"><h2>Jeszcze nie masz zwierząt</h2><p>Za 50 monet możesz kupić swojego pierwszego chomika.</p>'+route('shop','Przejdź do sklepu','primary')+'</div>')+'</section>'
 }
 function stats(p){
- return '<section class="screen">'+head('Statystyki','Klasa '+activeGrade)+'<div class="stack">'+activeTopics.map(c=>{
-  const rows=record(p,activeGrade,c.id),attempts=rows.reduce((s,r)=>s+r[0],0),correct=rows.reduce((s,r)=>s+r[1],0),pct=progress(rows)
+ return '<section class="screen">'+head('Statystyki','Klasa '+active().grade)+'<div class="stack">'+grades[active().grade].map(c=>{
+  const rows=record(p,active().grade,c.id),attempts=rows.reduce((s,r)=>s+r[0],0),correct=rows.reduce((s,r)=>s+r[1],0),pct=progress(rows)
   return '<article class="panel stat-row"><div class="row"><span class="symbol">'+c.icon+'</span><strong>'+c.name+'</strong></div><div class="row"><span>Rozwiązane <b>'+attempts+'</b></span><span>Poprawne <b>'+correct+'</b></span><span>Błędne <b>'+(attempts-correct)+'</b></span><span>Skuteczność <b>'+(attempts?Math.round(100*correct/attempts):0)+'%</b></span></div><small>Opanowanie '+pct+'%</small>'+bar(pct,c.name)+'</article>'
  }).join('')+'</div></section>'
 }
 function rankScreen(p){
  const r=rank(p)
- return '<section class="screen narrow">'+head('Moja ranga')+'<div class="rank-card"><h2>'+ranks[r.index]+'</h2><p>Opanowane kategorie w klasie 4 <b>'+r.total+'</b></p>'+(r.index<6?'<p>Do rangi '+ranks[r.index+1]+' potrzebujesz jeszcze '+(thresholds[r.index+1]-r.total)+' kategorii.</p>'+bar(Math.round(100*r.total/thresholds[r.index+1]),'Postęp do następnej rangi'):'<p>Zdobywasz najwyższą rangę!</p>')+'</div><div class="panel stack"><h3>Jak opanować kategorię?</h3><p>Na poziomach 3–5 rozwiąż co najmniej 12 zadań, podaj co najmniej 10 poprawnych odpowiedzi i utrzymaj skuteczność co najmniej 80%. Wyniki liczą się osobno dla każdej kategorii.</p></div>'+ranks.map((x,i)=>'<div class="panel row spaced"><strong>'+x+'</strong><small>'+thresholds[i]+' kategorii'+(r.index===i?' · Twoja ranga':'')+'</small></div>').join('')+'</section>'
+ return '<section class="screen narrow">'+head('Moja ranga')+'<div class="rank-card"><h2>'+ranks[r.index]+'</h2><p>Opanowane kategorie we wszystkich klasach <b>'+r.total+'</b></p>'+(r.index<6?'<p>Do rangi '+ranks[r.index+1]+' potrzebujesz jeszcze '+(thresholds[r.index+1]-r.total)+' kategorii.</p>'+bar(Math.round(100*r.total/thresholds[r.index+1]),'Postęp do następnej rangi'):'<p>Zdobywasz najwyższą rangę!</p>')+'</div><div class="panel stack"><h3>Jak opanować kategorię?</h3><p>Na poziomach 3–5 rozwiąż co najmniej 12 zadań, podaj co najmniej 10 poprawnych odpowiedzi i utrzymaj skuteczność co najmniej 80%. Wyniki liczą się osobno dla każdej kategorii.</p></div>'+ranks.map((x,i)=>'<div class="panel row spaced"><strong>'+x+'</strong><small>'+thresholds[i]+' kategorii'+(r.index===i?' · Twoja ranga':'')+'</small></div>').join('')+'</section>'
 }
 function profileScreen(p){
- if(!draft)return '<section class="screen narrow">'+head('Profil')+'<div class="panel stack"><div class="row">'+avatar(p.avatar)+'<div><h2>'+esc(p.name)+'</h2><small>Klasa '+activeGrade+'</small></div></div><div class="row spaced">'+balance(p)+'<strong>'+ranks[rank(p).index]+'</strong></div><p>Poprawne odpowiedzi do wykorzystania na karmienie: '+format(feedingStatus(p).available)+' · Zabawki '+p.toys+' · Zwierzęta '+Object.keys(p.pets).length+'</p><div class="actions">'+button('edit','Edytuj profil',{class:'primary'})+route('stats','Statystyki')+route('users','Zmień użytkownika')+route('settings','Ustawienia')+'</div></div></section>'
+ if(!draft)return '<section class="screen narrow">'+head('Profil')+'<div class="panel stack"><div class="row">'+avatar(p.avatar)+'<div><h2>'+esc(p.name)+'</h2><small>Klasa '+active().grade+'</small></div></div><div class="row spaced">'+balance(p)+'<strong>'+ranks[rank(p).index]+'</strong></div><p>Poprawne odpowiedzi do wykorzystania na karmienie: '+format(feedingStatus(p).available)+' · Zabawki '+p.toys+' · Zwierzęta '+Object.keys(p.pets).length+'</p><div class="actions">'+button('edit','Edytuj profil',{class:'primary'})+route('stats','Statystyki')+route('users','Zmień użytkownika')+route('settings','Ustawienia')+'</div></div></section>'
  const a=draft.avatar, select=(key,label,choices)=>'<label class="form-row">'+label+'<select data-avatar="'+key+'">'+choices.map((n,i)=>'<option value="'+i+'" '+(a[key]===i?'selected':'')+'>'+n+'</option>').join('')+'</select></label>'
  return '<section class="screen narrow">'+head('Edytuj profil')+'<form class="panel stack" id="profile-form"><div id="avatar-live">'+avatar(a)+'</div><label class="form-row">Imię lub pseudonim<input id="profile-name" name="name" value="'+esc(draft.name)+'" maxlength="28" required></label><div class="choice">'+[['preset','Gotowy awatar'],['custom','Własna postać'],['pet','Moje zwierzę']].map(([id,label])=>button('avatar-type',label,{val:id,pressed:a.type===id,class:a.type===id?'selected':'',disabled:id==='pet'&&!Object.keys(p.pets).length})).join('')+'</div>'+
  (a.type==='preset'?'<div class="avatar-options">'+preset.map((x,i)=>button('preset',x,{val:i,pressed:a.preset===i,label:'Awatar '+(i+1),class:a.preset===i?'selected':''})).join('')+'</div>':a.type==='custom'?select('face','Twarz',['Jasna','Brzoskwiniowa','Karmelowa','Brązowa'])+select('hair','Fryzura',['Krótka','Długa','Kręcona','Grzywka'])+select('shirt','Ubranie',['Turkusowe','Niebieskie','Różowe','Pomarańczowe'])+select('accessory','Akcesoria',['Bez akcesoriów','Czapka','Okulary','Mucha']):'<div class="choice">'+Object.keys(p.pets).map(i=>button('pet-avatar',animals[i][0],{val:i,pressed:a.pet===+i,class:a.pet===+i?'selected':''})).join('')+'</div>')+'<div class="actions"><button class="primary" type="submit">Zapisz profil</button>'+route('profile','Anuluj')+'</div></form></section>'
 }
 function users(){
- return '<section class="screen narrow">'+head('Zmień użytkownika','Wybierz profil lub dodaj nowy. Każdy ma własne punkty, zwierzęta i postępy.')+'<div class="panel stack switcher">'+state.profiles.map(p=>'<div class="row"><span class="row">'+avatar(p.avatar)+'<span><strong>'+esc(p.name)+'</strong><br><small>Klasa '+activeGrade+(p.id===state.active?' · aktywny':'')+'</small></span></span><div class="actions">'+button('switch',p.id===state.active?'Wybrany':'Wybierz',{val:p.id,disabled:p.id===state.active,label:p.id===state.active?'Wybrany profil: '+esc(p.name):'Wybierz profil: '+esc(p.name)})+button('delete','Usuń',{val:p.id,class:'danger',label:'Usuń profil '+esc(p.name)})+'</div></div>').join('')+'</div><form id="new-profile" class="panel stack"><label class="form-row">Imię lub pseudonim nowego profilu<input name="name" maxlength="28" required></label><div><button class="primary" type="submit">Dodaj profil</button></div></form></section>'
+ return '<section class="screen narrow">'+head('Zmień użytkownika','Wybierz profil lub dodaj nowy. Każdy ma własne punkty, zwierzęta i postępy.')+'<div class="panel stack switcher">'+state.profiles.map(p=>'<div class="row"><span class="row">'+avatar(p.avatar)+'<span><strong>'+esc(p.name)+'</strong><br><small>Klasa '+p.grade+(p.id===state.active?' · aktywny':'')+'</small></span></span><div class="actions">'+button('switch',p.id===state.active?'Wybrany':'Wybierz',{val:p.id,disabled:p.id===state.active,label:p.id===state.active?'Wybrany profil: '+esc(p.name):'Wybierz profil: '+esc(p.name)})+button('delete','Usuń',{val:p.id,class:'danger',label:'Usuń profil '+esc(p.name)})+'</div></div>').join('')+'</div><form id="new-profile" class="panel stack"><label class="form-row">Imię lub pseudonim nowego profilu<input name="name" maxlength="28" required></label><div><button class="primary" type="submit">Dodaj profil</button></div></form></section>'
 }
 function settings(){
- return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+route('users','Zarządzaj profilami')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klasy 4. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
+ return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+route('users','Zarządzaj profilami')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
 }
 function render(scroll=false){
  const p=active()
+ document.documentElement.dataset.accent=state.accent??'blue'
  document.documentElement.dataset.theme=state.theme
  document.documentElement.dataset.motion=state.motion?'on':'off'
  header(p)
- const views={learn,setup,task:taskScreen,result,shop,pets,stats,rank:rankScreen,profile:profileScreen,users,settings,challenges:p=>'<section class="screen narrow">'+head('Codzienne wyzwania','Klasa '+activeGrade+' · Zmiana wyzwań o północy czasu polskiego.')+challengeCards(p,false)+'</section>'}
+ const views={inventory,learn,setup,task:taskScreen,result,shop,pets,stats,rank:rankScreen,profile:profileScreen,users,settings,challenges:p=>'<section class="screen narrow">'+head('Codzienne wyzwania','Klasa '+active().grade+' · Zmiana wyzwań o północy czasu polskiego.')+challengeCards(p,false)+'</section>'}
  $('main').innerHTML=views[page](p)
  if(scroll)window.scrollTo(0,0)
 }
@@ -203,7 +219,7 @@ function check(){
  $('main').querySelector('[data-action="next"]').focus()
 }
 function start(){
- session={grade:activeGrade,limit,question:exercise(chosen.id,activeGrade,level),done:0,good:0,input:'',checked:false}
+ session={grade:active().grade,limit,question:exercise(chosen.id,active().grade,level),done:0,good:0,input:'',checked:false}
  page='task';render(true)
 }
 function next(){
@@ -230,20 +246,30 @@ function animatePet(i,action,message){
  const current=fx
  setTimeout(()=>{if(fx!==current)return;fx=null;if(['shop','pets'].includes(page))render()},1700)
 }
+const palettes={blue:'Niebieski',purple:'Fioletowy',green:'Zielony',berry:'Malinowy'}
 const actions={
+ grade:v=>{active().grade=Number(v);save();go('learn')},
+ accent:v=>{if(Object.hasOwn(palettes,v)){state.accent=v;save();render()}},
+
  go:v=>go(v),menu:()=>$('menu').showModal(),'close-menu':()=>$('menu').close(),
- topic:v=>{const topic=activeTopics.find(c=>c.id===v);if(topic){chosen=topic;page='setup';render(true)}},
+ topic:v=>{const topic=grades[active().grade].find(c=>c.id===v);if(topic){chosen=topic;page='setup';render(true)}},
  level:v=>{level=+v;render()},limit:v=>{limit=+v;render()},start,next,
  finish:()=>{page='result';render(true)},again:()=>{page='setup';render(true)},key:useKey,
  group:v=>{group=+v;render()},
  buy:v=>{if(buy(active(),+v)){save();animatePet(+v,'buy','Kupiono: '+animals[v][0]+'!')}},
+ 'buy-supply':id=>{
+  const p=active(),previous={coins:p.coins,supplies:p.supplies}
+  if(!buySupply(p,id))return
+  if(!save()){Object.assign(p,previous);return}
+  render();toast('Kupiono: '+getSupply(id).name)
+ },
  care:v=>{
-  const [i,a]=v.split(':'), p=active(), pet=p.pets[i], toys=p.toys
-  if(!care(p,+i,a)){render();return}
-  if(!save()){p.pets[i]=pet;p.toys=toys;return}
+  const [i,a,item]=v.split(':'), p=active(), pet=p.pets[i], toys=p.toys,inventory=p.supplies
+  if(!care(p,+i,a,Date.now(),item)){render();return}
+  if(!save()){p.pets[i]=pet;p.toys=toys;p.supplies=inventory;return}
   animatePet(+i,a,{food:'Smacznego! Wykorzystano '+feedingCost+' poprawnych odpowiedzi.',play:'Ale zabawa!',sleep:'Dobrej drzemki!',wake:'Pobudka!'}[a])
  },
- claim:v=>{const p=active();if(claim(p,activeGrade,v)){save();render();toast('Wyzwanie ukończone! Nagroda odebrana.',true)}},
+ claim:v=>{const p=active();if(claim(p,active().grade,v)){save();render();toast('Wyzwanie ukończone! Nagroda odebrana.',true)}},
  edit:()=>{draft=structuredClone({name:active().name,avatar:active().avatar});render()},
  'avatar-type':v=>{draft.avatar.type=v;if(v==='pet'&&!active().pets[draft.avatar.pet])draft.avatar.pet=+Object.keys(active().pets)[0];render()},
  preset:v=>{draft.avatar.preset=+v;render()},'pet-avatar':v=>{draft.avatar.pet=+v;render()},

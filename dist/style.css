@@ -15,3 +15,15 @@ dialog{background:var(--surface);color:var(--ink);border:1px solid var(--line);b
 .mobile-status{display:none}
 @media(max-width:760px){.mobile-status{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.mobile-status span{font-weight:730}}
 @media(max-width:375px){.nav-inner button{font-size:.75rem}.topic-meta small{font-size:.78rem}.top-actions .balance{font-size:.82rem}.brand b{max-width:95px}}
+
+:root[data-accent=purple]{--primary:#7044a0;--blue:#7044a0;--mint:#905cc2}
+:root[data-accent=purple] .hero,:root[data-accent=purple] .rank-card{background:linear-gradient(115deg,#7044a0,#905cc2);color:white}
+:root[data-accent=purple] button.selected{border-color:#905cc2}
+
+:root[data-accent=green]{--primary:#226c48;--blue:#226c48;--mint:#26866d}
+:root[data-accent=green] .hero,:root[data-accent=green] .rank-card{background:linear-gradient(115deg,#226c48,#26866d);color:white}
+:root[data-accent=green] button.selected{border-color:#26866d}
+
+:root[data-accent=berry]{--primary:#99345b;--blue:#99345b;--mint:#bc5573}
+:root[data-accent=berry] .hero,:root[data-accent=berry] .rank-card{background:linear-gradient(115deg,#99345b,#bc5573);color:white}
+:root[data-accent=berry] button.selected{border-color:#bc5573}
