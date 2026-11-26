@@ -104,7 +104,7 @@ function syncSave(){
  syncQueue=syncQueue.then(async()=>{
   try{
    meta.tag=await conn.api.write(data,meta.tag)
-   if(JSON.stringify(state.profiles.find(x=>x.id===conn.id))===JSON.stringify(data))meta.dirty=false
+   if(JSON.stringify(state.profiles.find(x=>x.id===conn.id))===JSON.stringify(data)){meta.dirty=false;if(published.get(conn.id)!==boardEntry(data))void updateBoard()}
    localStorage.setItem(storage,JSON.stringify(state))
   }catch(err){toast(err.message)}
  })
@@ -132,7 +132,7 @@ async function rememberPassword(p,pw){
  state.vault.entries[p.id]={name:p.name,ciphertext:await sealPassword(state.vault.publicKey,pw)}
 }
 function save(){
- try {syncSave();localStorage.setItem(storage,JSON.stringify(state));return true}
+ try {syncSave();localStorage.setItem(storage,JSON.stringify(state));if(unlocked===active().id&&published.get(unlocked)!==boardEntry(active()))void updateBoard();return true}
  catch {toast('Nie udało się zapisać danych na urządzeniu. Wyeksportuj kopię w ustawieniach.');return false}
 }
 function go(target){
@@ -141,6 +141,7 @@ function go(target){
  if(target==='profile')draft=null
  if($('menu').open)$('menu').close()
  render(true)
+ if(target==='learn')void updateBoard()
 }
 function head(title,note=''){return '<header class="stack"><h1>'+title+'</h1>'+(note?'<p>'+note+'</p>':'')+'</header>'}
 function header(p){
@@ -155,22 +156,55 @@ function challengeCards(p,compact){
   return '<article class="'+(compact?'mini-challenge':'challenge')+'"><div class="row"><strong>'+esc(c.name)+'</strong><span class="reward" title="Monety">+'+c.reward+'</span></div>'+bar(100*n/c.target,c.name)+'<small>'+n+' / '+c.target+(done?' · Nagroda odebrana':'')+'</small>'+(!compact&&!done?button('claim','Odbierz nagrodę',{val:c.id,disabled:n<c.target,class:'primary'}):'')+'</article>'
  }).join('')
 }
+const boardUrl='https://matematyka-profile-rodzinne.karas-bartlomiej.chatgpt.site/ranking'
+let boardRows=null, boardOpen=false, boardMessage='',boardBusy=false,boardAgain=false
+const published=new Map()
+const boardEntry=p=>JSON.stringify({name:p.name,pets:Object.keys(p.pets).map(Number).sort((a,b)=>a-b)})
+try{boardRows=JSON.parse(localStorage.getItem('ostatni-ranking')||'null')}catch{}
+async function boardAuth(p){
+ const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('ranking/v1/'+p.id+'/'+p.lock.digest))
+ return 'Bearer '+Array.from(new Uint8Array(hash),n=>n.toString(16).padStart(2,'0')).join('')
+}
 function leaderboard(){
- const rows=state.profiles.map(p=>({name:p.name,count:Object.keys(p.pets).length,
-  value:Object.entries(p.pets).reduce((n,[i,pet])=>n+(pet.pricePaid??animals[i][1]),0)}))
- rows.sort((a,b)=>b.value-a.value||a.name.localeCompare(b.name,'pl'))
+ const rows=boardRows??[],list=boardOpen?rows:rows.slice(0,4)
  let place=0
- return '<section class="panel stack"><h2>Ranking zwierząt</h2><small>Profile na tym urządzeniu według łącznej ceny zakupionych zwierząt</small>'+rows.map((r,i)=>{
+ return '<section id="ranking-online" class="panel stack"><h2>Ranking zwierząt</h2><small>Wspólny ranking według wartości zakupionych zwierząt</small>'+list.map((r,i)=>{
   if(!i||rows[i-1].value!==r.value)place=i+1
   return '<div class="row spaced"><strong>'+place+'. '+esc(r.name)+'</strong><span>'+r.count+' szt. · '+format(r.value)+' monet</span></div>'
- }).join('')+'</section>'
+ }).join('')+(rows.length>4?button('more-ranks',boardOpen?'Zwiń listę':'Pokaż pozostałych ('+(rows.length-4)+')',{pressed:boardOpen}):'')+'<small role="status">'+esc(boardMessage||(!boardRows?'Pobieranie rankingu…':!rows.length?'Brak wyników.':''))+'</small></section>'
 }
+function paintBoard(){const node=$('ranking-online');if(node)node.outerHTML=leaderboard()}
+async function updateBoard(){
+ const p=active()
+ if(!p?.lock||unlocked!==p.id)return
+ if(boardBusy){boardAgain=true;return}
+ boardBusy=true
+ try{
+  const entry=boardEntry(p)
+  const options={cache:'no-store',signal:AbortSignal.timeout(12000)}
+  if(!state.links?.[p.id]?.dirty&&published.get(p.id)!==entry){
+   const response=await fetch(boardUrl,{...options,method:'PUT',headers:{Authorization:await boardAuth(p),'Content-Type':'application/json'},body:entry})
+   if(!response.ok)throw Error()
+   published.set(p.id,entry)
+  }
+  if(page==='learn'){
+   const response=await fetch(boardUrl,options)
+   if(!response.ok)throw Error()
+   boardRows=await response.json()
+   localStorage.setItem('ostatni-ranking',JSON.stringify(boardRows))
+  }
+  boardMessage=''
+ }catch{boardMessage=boardRows?'Brak połączenia z rankingiem. Wyświetlono ostatnio pobraną listę.':'Nie udało się pobrać rankingu. Ponowimy próbę.'}
+ finally{boardBusy=false;paintBoard();if(boardAgain){boardAgain=false;void updateBoard()}}
+}
+setInterval(()=>{if(!document.hidden&&page==='learn')void updateBoard()},30000)
+window.addEventListener('online',updateBoard)
 function learn(p){
  const r=rank(p)
- return '<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
+ return leaderboard()+'<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
   const percent=progress(record(p,active().grade,c.id))
   return button('topic','<span class="symbol" aria-hidden="true">'+c.icon+'</span><strong>'+c.name+'</strong><span class="topic-meta"><small>'+percent+'%</small>'+bar(percent,c.name)+'</span>'+icon('next'),{val:c.id,class:'topic'})
- }).join('')+'</div></section></div><aside class="stack">'+leaderboard()+'<section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
+ }).join('')+'</div></section></div><aside class="stack"><section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
 }
 function setup(){
  return '<div class="screen narrow">'+head(chosen.name,'Klasa '+active().grade+' · '+signedPoints(pointsForAnswer(true,level))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false,level))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+3,class:'level '+(level===i+3?'selected':''),pressed:level===i+3})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
@@ -317,6 +351,7 @@ function animatePet(i,action,message){
 }
 const palettes={blue:'Niebieski',purple:'Fioletowy',green:'Zielony',berry:'Malinowy'}
 const actions={
+ 'more-ranks':()=>{boardOpen=!boardOpen;paintBoard()},
  'vault':async()=>{
   if(!state.vault){
    const keys=await createFamilyVault()
@@ -372,7 +407,9 @@ const actions={
   fx=null
   go('learn')
  },
- delete:v=>{const p=state.profiles.find(x=>x.id===v);if(p.id!==unlocked){toast('Zaloguj się do tego profilu, aby go usunąć.');return}confirmAction('Usunąć profil „'+p.name+'” wraz z postępami?',()=>{
+ delete:v=>{const p=state.profiles.find(x=>x.id===v);if(p.id!==unlocked){toast('Zaloguj się do tego profilu, aby go usunąć.');return}confirmAction('Usunąć profil „'+p.name+'” wraz z postępami?',async()=>{
+  try{while(boardBusy)await new Promise(resolve=>setTimeout(resolve,50));const r=await fetch(boardUrl,{method:'DELETE',headers:{Authorization:await boardAuth(p)},signal:AbortSignal.timeout(12000)});if(!r.ok)throw Error()}catch{toast('Aby usunąć profil i wpis z rankingu, połącz się z internetem.');return}
+  published.delete(p.id)
   state.profiles=state.profiles.filter(x=>x.id!==v)
   if(!state.profiles.length)state.profiles.push(profile())
   if(state.active===v)state.active=state.profiles[0].id

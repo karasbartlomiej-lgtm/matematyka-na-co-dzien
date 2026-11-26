@@ -27,3 +27,5 @@ dialog{background:var(--surface);color:var(--ink);border:1px solid var(--line);b
 :root[data-accent=berry]{--primary:#99345b;--blue:#99345b;--mint:#bc5573}
 :root[data-accent=berry] .hero,:root[data-accent=berry] .rank-card{background:linear-gradient(115deg,#99345b,#bc5573);color:white}
 :root[data-accent=berry] button.selected{border-color:#bc5573}
+
+#ranking-online{margin-bottom:18px}#ranking-online small:empty{display:none}
