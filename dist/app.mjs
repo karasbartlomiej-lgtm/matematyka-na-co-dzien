@@ -123,6 +123,32 @@ async function connectProfile(){
  const url=new URL(location.href);url.hash='profil='+meta.token
  prompt('Skopiuj prywatny link na drugi telefon. Do otwarcia profilu potrzebne jest także jego hasło.',url.href)
 }
+async function sessionStore(){
+ return new Promise((resolve,reject)=>{
+  const r=indexedDB.open('mat-zaufane-urzadzenie',1)
+  r.onupgradeneeded=()=>r.result.createObjectStore('session')
+  r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)
+ })
+}
+async function rememberLogin(p,pw){
+ const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt'])
+ const iv=crypto.getRandomValues(new Uint8Array(12))
+ const data=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(pw))
+ const db=await sessionStore()
+ const tx=db.transaction('session','readwrite')
+ tx.objectStore('session').put({id:p.id,iv,key,data},'last')
+ await new Promise((ok,no)=>{tx.oncomplete=ok;tx.onerror=no})
+ db.close();localStorage.setItem('mat-last',p.id)
+}
+async function resumeLogin(){
+ if(pendingLink||localStorage.getItem('mat-last')!==active().id)return
+ const db=await sessionStore(),r=db.transaction('session').objectStore('session').get('last')
+ const v=await new Promise((ok,no)=>{r.onsuccess=()=>ok(r.result);r.onerror=no});db.close()
+ if(v?.id!==active().id||!active().lock)return
+ const pw=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:v.iv},v.key,v.data))
+ const form=$('login-form')
+ if(form&&loginTarget===null){form.elements.password.value=pw;form.requestSubmit()}
+}
 function downloadJson(name,data){
  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
  const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)
@@ -201,7 +227,7 @@ setInterval(()=>{if(!document.hidden&&page==='learn')void updateBoard()},30000)
 window.addEventListener('online',updateBoard)
 function learn(p){
  const r=rank(p)
- return leaderboard()+'<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section><div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
+ return '<div class="dashboard"><div class="stack"><section class="hero"><div class="hero-art" aria-hidden="true"><img src="./logo.svg" alt=""><span>+</span><span>✦</span></div><div class="kicker">Trening matematyczny · Klasa '+p.grade+'</div><h1 class="hero-title">Cześć, '+esc(p.name)+'!</h1><p>Rozwiązuj zadania, zbieraj monety i odkrywaj zwierzęta.</p></section>'+leaderboard()+'<div class="mobile-status"><span>'+ranks[r.index]+'</span>'+route('challenges',icon('challenges')+' Wyzwania dnia')+'</div><div>'+route('users',icon('users')+' Zmień użytkownika')+'</div><section class="stack"><h2>Wybierz klasę</h2><div class="grade-list">'+grades.slice(1).map((_,i)=>button('grade',i+1,{val:i+1,pressed:p.grade===i+1,class:p.grade===i+1?'primary':'',label:'Klasa '+(i+1)})).join('')+'</div></section><section><div class="section-top"><h2>Kategorie matematyczne</h2><small>Klasa '+active().grade+'</small></div><div class="topics">'+grades[active().grade].map(c=>{
   const percent=progress(record(p,active().grade,c.id))
   return button('topic','<span class="symbol" aria-hidden="true">'+c.icon+'</span><strong>'+c.name+'</strong><span class="topic-meta"><small>'+percent+'%</small>'+bar(percent,c.name)+'</span>'+icon('next'),{val:c.id,class:'topic'})
  }).join('')+'</div></section></div><aside class="stack"><section class="panel"><div class="section-top"><h2>Wyzwania dnia</h2>'+icon('challenges')+'</div>'+challengeCards(p,true)+route('challenges','Zobacz wyzwania','wide')+'</section><section class="rank-card"><div class="kicker">Twoja ranga</div><h3>'+ranks[r.index]+'</h3><p>'+r.total+' opanowanych kategorii</p>'+route('rank','Zobacz rangi')+'</section></aside></div>'
@@ -278,7 +304,7 @@ function users(){
  return '<section class="screen narrow">'+head('Zmień użytkownika','Wybierz profil lub dodaj nowy. Każdy ma własne punkty, zwierzęta i postępy.')+'<div class="panel stack switcher">'+state.profiles.map(p=>'<div class="row"><span class="row">'+avatar(p.avatar)+'<span><strong>'+esc(p.name)+'</strong><br><small>Klasa '+p.grade+(p.id===state.active?' · aktywny':'')+'</small></span></span><div class="actions">'+button('switch',p.id===state.active?'Wybrany':'Wybierz',{val:p.id,disabled:p.id===state.active,label:p.id===state.active?'Wybrany profil: '+esc(p.name):'Wybierz profil: '+esc(p.name)})+button('delete','Usuń',{val:p.id,class:'danger',label:'Usuń profil '+esc(p.name)})+'</div></div>').join('')+'</div><form id="new-profile" class="panel stack"><label class="form-row">Imię lub pseudonim nowego profilu<input name="name" maxlength="28" required></label><div><button class="primary" type="submit">Dodaj profil</button></div></form></section>'
 }
 function settings(){
- return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+button('vault',state.vault?'Pobierz zaszyfrowaną kopię haseł':'Włącz kopię haseł i pobierz klucz rodzica')+route('users','Zarządzaj profilami')+button('link-profile','Link do logowania na drugim telefonie')+button('export-one','Zapisz mój profil na drugi telefon')+button('import-one','Wczytaj mój profil z pliku')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
+ return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+button('parent-mail','Adres e-mail rodzica')+button('vault',state.vault?'Pobierz zaszyfrowaną kopię haseł':'Włącz kopię haseł i pobierz klucz rodzica')+route('users','Zarządzaj profilami')+button('link-profile','Link do logowania na drugim telefonie')+button('export-one','Zapisz mój profil na drugi telefon')+button('import-one','Wczytaj mój profil z pliku')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
 }
 function render(scroll=false){
  const p=active()
@@ -286,10 +312,10 @@ function render(scroll=false){
  document.documentElement.dataset.theme=state.theme
  document.documentElement.dataset.motion=state.motion?'on':'off'
  if(unlocked!==p.id){
-  if(pendingLink){$('top').innerHTML='';$('bottom').innerHTML='';$('main').innerHTML='<form id="cloud-login" class="screen narrow panel stack"><h1>Otwórz profil z linku</h1><label>Hasło profilu <input type="password" name="password" required autocomplete="current-password"></label><button class="primary">Zaloguj się</button>'+button('cancel-link','Wróć do lokalnych profili')+'</form>';return}
+  if(pendingLink){$('top').innerHTML='';$('bottom').innerHTML='';$('main').innerHTML='<form id="cloud-login" class="screen narrow panel stack"><h1>Otwórz profil z linku</h1><label>Hasło profilu <input type="password" name="password" required autocomplete="current-password"></label><button class="primary">Zaloguj się</button>'+button('remind','Przypomnij hasło')+button('cancel-link','Wróć do lokalnych profili')+'</form>';return}
   const candidate=state.profiles.find(x=>x.id===loginTarget)??p
   $('top').innerHTML='';$('bottom').innerHTML='';$('menu').innerHTML=''
-  $('main').innerHTML='<section class="screen narrow panel stack"><h1>Wybierz swój profil</h1><div class="choice">'+state.profiles.map(x=>button('login-profile',esc(x.name),{val:x.id,pressed:x.id===candidate.id,class:x.id===candidate.id?'selected':''})).join('')+'</div><form class="stack" id="login-form"><label class="form-row">'+(candidate.lock?'Hasło profilu':'Ustal pierwsze hasło')+' · '+esc(candidate.name)+'<input name="password" type="password" required autocomplete="'+(candidate.lock?'current-password':'new-password')+'"></label><small>Od 1 do 4 znaków</small><button class="primary">'+(candidate.lock?'Zaloguj się':'Zapisz hasło i wejdź')+'</button></form>'+button('import-one','Wczytaj swój profil z pliku')+'</section>'
+  $('main').innerHTML='<section class="screen narrow panel stack"><h1>Wybierz swój profil</h1><div class="choice">'+state.profiles.map(x=>button('login-profile',esc(x.name),{val:x.id,pressed:x.id===candidate.id,class:x.id===candidate.id?'selected':''})).join('')+'</div><form class="stack" id="login-form"><label class="form-row">'+(candidate.lock?'Hasło profilu':'Ustal pierwsze hasło')+' · '+esc(candidate.name)+'<input name="password" type="password" required autocomplete="'+(candidate.lock?'current-password':'new-password')+'"></label><small>Od 1 do 4 znaków</small><button class="primary">'+(candidate.lock?'Zaloguj się':'Zapisz hasło i wejdź')+'</button></form>'+button('remind','Przypomnij hasło')+button('import-one','Wczytaj swój profil z pliku')+'</section>'
   return
  }
  header(p)
@@ -351,6 +377,9 @@ function animatePet(i,action,message){
 }
 const palettes={blue:'Niebieski',purple:'Fioletowy',green:'Zielony',berry:'Malinowy'}
 const actions={
+ 'parent-mail':()=>{const mail=prompt('Adres e-mail rodzica do przypomnień',localStorage.getItem('mat-parent-mail')||'');if(mail&&/^[^\s@?,;]+@[^\s@?,;]+\.[^\s@?,;]+$/.test(mail.trim())){localStorage.setItem('mat-parent-mail',mail.trim());toast('Adres zapisany na urządzeniu.')}},
+ remind:()=>{const mail=localStorage.getItem('mat-parent-mail')||'',p=state.profiles.find(x=>x.id===loginTarget)??active();location.href='mailto:'+encodeURIComponent(mail)+'?subject='+encodeURIComponent('Matematyka na co dzień – przypomnienie hasła')+'&body='+encodeURIComponent('Proszę o pomoc w odzyskaniu hasła do '+(pendingLink?'profilu z prywatnego linku':'profilu „'+p.name+'”')+'.');},
+
  'more-ranks':()=>{boardOpen=!boardOpen;paintBoard()},
  'vault':async()=>{
   if(!state.vault){
@@ -400,7 +429,7 @@ const actions={
  switch:v=>{
   const p=state.profiles.find(profile=>profile.id===v)
   if(!p)return
-  unlocked=null;loginTarget=p.id
+  localStorage.removeItem('mat-last');unlocked=null;loginTarget=p.id
   const previous=state.active
   state.active=p.id
   if(!save()){state.active=previous;return}
@@ -445,7 +474,7 @@ document.addEventListener('submit',async e=>{
    state.active=p.id;(state.links??={})[p.id]={token:pendingLink,tag}
    localStorage.setItem(storage,JSON.stringify(state))
    await rememberPassword(p,pw);localStorage.setItem(storage,JSON.stringify(state))
-   loginPin=pw;unlocked=p.id;cloud={api,id:p.id};pendingLink=null
+   await rememberLogin(p,pw).catch(()=>{});loginPin=pw;unlocked=p.id;cloud={api,id:p.id};pendingLink=null
    history.replaceState(null,'',location.pathname+location.search);go('learn')
   }catch{toast('Sprawdź hasło, link do profilu i połączenie z internetem.')}
   return
@@ -470,7 +499,7 @@ document.addEventListener('submit',async e=>{
   await rememberPassword(p,pw)
   state.active=p.id
   if(!save())return
-  unlocked=p.id;if(meta?.dirty)syncSave();loginTarget=null;go('learn');return
+  await rememberLogin(p,pw).catch(()=>{});unlocked=p.id;if(meta?.dirty)syncSave();loginTarget=null;go('learn');return
  }
 
  if(e.target.id==='answer-form'){e.preventDefault();check();return}
@@ -504,8 +533,8 @@ document.addEventListener('change',async e=>{
    const incoming=data.profiles[0],existing=state.profiles.find(x=>x.id===incoming.id)
    const pw=prompt('Wpisz hasło przenoszonego profilu')
    if(!pw||!await verifyProfile(incoming,pw)||(existing&&!await verifyProfile(existing,pw))){toast('Niepoprawne hasło.');return}
-   confirmAction('Wczytać profil '+incoming.name+' z tego pliku? Zapis tego samego profilu zostanie zastąpiony.',()=>{
-    state.profiles=state.profiles.filter(x=>x.id!==incoming.id).concat(incoming);state.active=incoming.id;unlocked=incoming.id;loginPin=pw;cloud=null
+   confirmAction('Wczytać profil '+incoming.name+' z tego pliku? Zapis tego samego profilu zostanie zastąpiony.',async()=>{
+    state.profiles=state.profiles.filter(x=>x.id!==incoming.id).concat(incoming);state.active=incoming.id;await rememberLogin(incoming,pw).catch(()=>{});unlocked=incoming.id;loginPin=pw;cloud=null
     save();go('learn')
    })
   }catch{toast('Wybierz plik zapisany opcją „Zapisz mój profil na drugi telefon”.')}
@@ -552,6 +581,7 @@ window.addEventListener('storage',e=>{
 document.addEventListener('visibilitychange',syncWakeLock)
 window.addEventListener('pageshow',syncWakeLock)
 render()
+resumeLogin().catch(()=>{})
 syncWakeLock()
 if(loadError)toast('Nie udało się odczytać wcześniejszego zapisu. Możesz przywrócić kopię w ustawieniach.')
 if('serviceWorker' in navigator){
