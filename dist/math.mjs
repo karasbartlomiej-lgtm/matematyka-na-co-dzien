@@ -1,7 +1,8 @@
+import { grade3Exercise } from './grade3-bank.mjs'
 const c=(id,name,icon)=>({id,name,icon})
 const topics=Object.fromEntries([
-c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓'),c('natural','Liczby naturalne','≶'),c('placeValue','System dziesiętny','10ⁿ')].map(x=>[x.id,x]))
-export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo','natural placeValue add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
+c('unknown','Zadania z niewiadomą','□'),c('time','Jednostki czasu','◷'),c('add','Dodawanie','+'),c('sub','Odejmowanie','−'),c('compare','Porównywanie liczb','≶'),c('count','Liczenie przedmiotów','●'),c('word','Zadania tekstowe','?'),c('mul','Mnożenie','×'),c('div','Dzielenie','÷'),c('clock','Zegar','◷'),c('money','Pieniądze','zł'),c('measure','Jednostki miary','↔'),c('geo','Geometria','△'),c('order','Kolejność działań','( )'),c('frac','Ułamki zwykłe','½'),c('dec','Ułamki dziesiętne','0,1'),c('rules','Podzielność liczb','÷'),c('area','Pola i obwody','□'),c('signed','Liczby dodatnie i ujemne','±'),c('expr','Wyrażenia algebraiczne','2x'),c('pct','Procenty','%'),c('volume','Bryły i objętości','▧'),c('power','Potęgi','x²'),c('root','Pierwiastki','√'),c('eq','Równania','x='),c('pyth','Twierdzenie Pitagorasa','△'),c('prob','Prawdopodobieństwo','⅙'),c('stat','Statystyka','▥'),c('exam','Trening egzaminacyjny','✓'),c('natural','Liczby naturalne','≶'),c('placeValue','System dziesiętny','10ⁿ')].map(x=>[x.id,x]))
+export const grades=[null,'add sub compare count word','add sub mul div clock money word','mul div add sub measure geo compare order unknown clock time word','natural placeValue add sub mul div order frac dec geo measure word','order frac dec rules area geo word','signed frac dec expr pct area volume','pct power root eq expr geo','eq power root pyth volume prob stat exam'].map(x=>x?.split(' ').map(id=>topics[id]))
 export const activeGrade=4
 export const activeTopics=grades[activeGrade]
 export const levels=['Łatwy','Średni','Trudny']
@@ -12,6 +13,8 @@ const fraction=(a,b)=>{const d=gcd(a,b);return b/d===1?String(a/d):a/d+'/'+b/d}
 export const pl=n=>String(n).replace('.',',')
 export function parse(raw){
  const clean=raw.trim().replaceAll('−','-').replace(',','.')
+ const time=clean.match(/^(\d{1,2}):(\d{2})$/)
+ if(time){const h=+time[1],m=+time[2];return h<24&&m<60?String(h).padStart(2,'0')+':'+time[2]:null}
  const grouped=/^-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:\.\d+)?$/
  const s=grouped.test(clean)?clean.replace(/[ \u00a0\u202f]/g,''):clean
  if (/^[<=>]$/.test(s)) return s
@@ -105,6 +108,7 @@ function orderMedium(){
  }
 }
 export function exercise(id,g,l){
+ if(g===3&&(id!=='mul'||Math.random()<0.75)){const imported=grade3Exercise(id,l);if(imported)return imported}
  if(id==='placeValue'&&g===activeGrade)return decimalSystem(l)
  if(id==='order'&&g===4&&l===4)return orderMedium()
  const caps=g===1?[5,8,10,15,20]:g===2?[12,20,40,70,100]:g===3?[20,45,100,300,1000]:[30,90,250,800,3000]
