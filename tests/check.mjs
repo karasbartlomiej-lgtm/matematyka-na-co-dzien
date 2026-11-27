@@ -1,3 +1,4 @@
+import {grade3Bank} from '../dist/grade3-bank.mjs'
 import assert from 'node:assert/strict'
 import {grades,activeGrade,activeTopics,exercise,matches,parse} from '../dist/math.mjs'
 import {buySupply,pointsForAnswer,animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
@@ -118,11 +119,44 @@ for(const [level,place] of [[1,'jedności'],[1,'dziesiątek'],[3,'milionów'],[5
  }finally{Math.random=random}
 }
 
+function solveGrade3(q,id){
+ const p=q.prompt,n=p.match(/\d+/g)?.map(Number)||[];
+ if(id==='clock'&&q.clock){const {h,m,pm}=q.clock;return String(h+(pm?12:0)).padStart(2,'0')+':'+String(m).padStart(2,'0')}
+ if(id==='unknown'){
+  const [left,right]=p.split(' = '), [a,op,b]=left.split(' '),r=Number(right);
+  return a==='□'?(op==='+'?r-Number(b):r+Number(b)):(op==='+'?r-Number(a):Number(a)-r)
+ }
+ if(id==='order')return solveOrder(p);
+ if(id==='time'){
+  if(p.includes('pół doby'))return 12;if(p.includes('pół roku'))return 6;
+  const [,quantity,from,to]=p.match(/^Przelicz: (\d+) \((.+)\) na (.+)\.$/);
+  const factor={kwadransów:15,minut:1,godzin:60,sekund:1/60,dób:1440,tygodni:7,dni:1,kwartałów:3,miesięcy:1,lat:12};
+  return Number(quantity)*factor[from]/factor[to];
+ }
+ if(id==='word'){
+  if(p.startsWith('W godzinę'))return n[0]*n[1];
+  if(p.startsWith('Przejście'))return n[2]/n[1];
+  if(p.startsWith('Napisanie'))return n[0]*n[1];
+  if(p.startsWith('Test ma')){const [count,seconds,h,m]=n;const end=h*60+m+count*seconds/60;return String(Math.floor(end/60)).padStart(2,'0')+':'+String(end%60).padStart(2,'0')}
+ }
+ return solve(q);
+}
+const expectedGrade3={add:240,sub:140,compare:120,order:110,unknown:160,clock:60,time:50,word:100,mul:24};
+for(const [id,total] of Object.entries(expectedGrade3)){
+ const qs=Object.values(grade3Bank[id]).flat();
+ assert.equal(qs.length,total,id);
+ assert.equal(new Set(qs.map(q=>q.prompt+'|'+q.answer)).size,total,id);
+ for(const q of qs){const expected=solveGrade3(q,id);assert.equal(parse(q.answer),expected,JSON.stringify(q));assert(matches(q.answer,q.answer));assert(q.steps.length>=2);}
+}
+assert(matches('8:15','08:15'));
+assert.equal(parse('24:00'),null);
+assert.equal(parse('17:60'),null);
+
 let samples=0, variants=0
 for(let g=1;g<=8;g++)for(const {id} of grades[g])for(let l=3;l<=5;l++){
  variants++
  for(let i=0;i<80;i++){
-  const q=exercise(id,g,l), answer=id==='order'&&g===4&&l===4?solveOrder(q.prompt):solve(q),actual=parse(q.answer)
+  const q=exercise(id,g,l), answer=g===3?solveGrade3(q,id):id==='order'&&g===4&&l===4?solveOrder(q.prompt):solve(q),actual=parse(q.answer)
   if(typeof answer==='number')assert(Math.abs(answer-actual)<1e-9,JSON.stringify(q))
   else assert.equal(actual,answer,q.prompt)
   assert(matches(q.answer,q.answer),q.prompt)
