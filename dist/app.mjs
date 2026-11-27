@@ -235,11 +235,16 @@ function learn(p){
 function setup(){
  return '<div class="screen narrow">'+head(chosen.name,'Klasa '+active().grade+' · '+signedPoints(pointsForAnswer(true,level))+' pkt za poprawną, '+signedPoints(pointsForAnswer(false,level))+' pkt za błędną odpowiedź')+'<div class="panel stack"><fieldset><legend>Poziom trudności</legend><div class="choice">'+levels.map((x,i)=>button('level','<span class="stars">'+('★'.repeat(i+1))+'</span>'+x,{val:i+3,class:'level '+(level===i+3?'selected':''),pressed:level===i+3})).join('')+'</div></fieldset><fieldset><legend>Liczba zadań</legend><div class="choice">'+[5,10,15,20,30,50,0].map(n=>button('limit',n||'Bez limitu',{val:n,class:limit===n?'selected':'',pressed:limit===n})).join('')+'</div></fieldset></div><div class="actions">'+button('start','Rozpocznij trening',{class:'primary'})+route('learn','Wróć do kategorii')+'</div></div>'
 }
+function exerciseClock(q){
+ if(!q.clock)return '';
+ const {h,m}=q.clock, point=(n,r)=>[100+Math.sin(n*Math.PI/6)*r,100-Math.cos(n*Math.PI/6)*r], hand=(n,r,w)=>{const [x,y]=point(n,r);return '<line x1="100" y1="100" x2="'+x+'" y2="'+y+'" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round"/>'};
+ return '<svg viewBox="0 0 200 200" width="210" height="210" role="img" aria-label="Zegar wskazówkowy" style="display:block;max-width:100%;margin:12px auto"><circle cx="100" cy="100" r="94" fill="none" stroke="currentColor" stroke-width="3"/>'+Array.from({length:60},(_,i)=>{const a=point(i/5,89),b=point(i/5,i%5===0?82:86);return '<line x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'" stroke="currentColor" stroke-width="'+(i%5===0?2:1)+'"/>'}).join('')+Array.from({length:12},(_,i)=>{const n=i+1,[x,y]=point(n,69);return '<text x="'+x+'" y="'+y+'" text-anchor="middle" dominant-baseline="central" font-size="15" fill="currentColor">'+n+'</text>'}).join('')+hand(h+m/60,43,7)+hand(m/5,65,4)+'<circle cx="100" cy="100" r="4" fill="currentColor"/></svg>';
+}
 function taskScreen(){
  const s=session,q=s.question, comparison=/^[<=>]$/.test(q.answer)
- const keys=comparison?['<','=','>','⌫']:['1','2','3','⌫','4','5','6','−','7','8','9','/','0',',']
+ const keys=comparison?['<','=','>','⌫']:/^\d{2}:\d{2}$/.test(q.answer)?['1','2','3','⌫','4','5','6',':','7','8','9','0']:['1','2','3','⌫','4','5','6','−','7','8','9','/','0',',']
  const feedback=s.checked?'<div class="feedback '+(s.ok?'':'error')+'" role="status">'+(s.ok?'<strong>Świetnie! '+signedPoints(pointsForAnswer(true,level))+' pkt</strong>':'<strong>Spróbujmy to razem rozwiązać. '+signedPoints(pointsForAnswer(false,level))+' pkt</strong><ol>'+q.steps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol><p>Prawidłowy wynik <strong>'+esc(q.answer)+'</strong></p>')+'</div>':''
- return '<section class="screen narrow"><div class="row spaced"><h2>'+chosen.name+'</h2><span class="badge">Zadanie '+(s.done+(s.checked?0:1))+(s.limit?' / '+s.limit:'')+'</span></div><form id="answer-form" class="panel stack"><div class="question">'+esc(q.prompt)+'</div><label class="form-row">Twoja odpowiedź<input class="answer" id="answer" type="text" inputmode="none" autocomplete="off" spellcheck="false" maxlength="32" value="'+esc(s.input)+'" '+(s.checked?'readonly':'')+'></label><div class="keypad" aria-label="Klawiatura zadania">'+keys.map(k=>button('key',esc(k),{val:k,disabled:s.checked,label:k==='⌫'?'Usuń znak':undefined})).join('')+'</div>'+feedback+'<div class="actions"><button type="submit" class="primary" '+(s.checked?'disabled':'')+'>Sprawdź</button>'+button('next',s.limit&&s.done===s.limit?'Zobacz podsumowanie':'Następne zadanie',{disabled:!s.checked,class:s.checked?'primary':''})+'</div></form>'+button('finish','Zakończ trening')+'</section>'
+ return '<section class="screen narrow"><div class="row spaced"><h2>'+chosen.name+'</h2><span class="badge">Zadanie '+(s.done+(s.checked?0:1))+(s.limit?' / '+s.limit:'')+'</span></div><form id="answer-form" class="panel stack"><div class="question">'+esc(q.prompt)+exerciseClock(q)+'</div><label class="form-row">Twoja odpowiedź<input class="answer" id="answer" type="text" inputmode="none" autocomplete="off" spellcheck="false" maxlength="32" value="'+esc(s.input)+'" '+(s.checked?'readonly':'')+'></label><div class="keypad" aria-label="Klawiatura zadania">'+keys.map(k=>button('key',esc(k),{val:k,disabled:s.checked,label:k==='⌫'?'Usuń znak':undefined})).join('')+'</div>'+feedback+'<div class="actions"><button type="submit" class="primary" '+(s.checked?'disabled':'')+'>Sprawdź</button>'+button('next',s.limit&&s.done===s.limit?'Zobacz podsumowanie':'Następne zadanie',{disabled:!s.checked,class:s.checked?'primary':''})+'</div></form>'+button('finish','Zakończ trening')+'</section>'
 }
 function result(){
  const score=session.good*pointsForAnswer(true,level)+(session.done-session.good)*pointsForAnswer(false,level)
@@ -354,10 +359,10 @@ function start(){
 function next(){
  if(!session.checked)return
  if(session.limit&&session.done>=session.limit){page='result';render(true);return}
- const old=session.question.prompt
+ const old=session.question.prompt+'|'+session.question.answer
  for(let i=0;i<8;i++){
   session.question=exercise(chosen.id,session.grade,level)
-  if(session.question.prompt!==old)break
+  if(session.question.prompt+'|'+session.question.answer!==old)break
  }
  session.checked=false;session.input='';render(true)
 }
