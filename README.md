@@ -20,12 +20,12 @@ Na iPhonie otwórz stronę w Safari, wybierz **Udostępnij → Dodaj do ekranu p
 ## Nauka, zwierzęta i profile
 
 - Klasa 4 obejmuje system dziesiętny i porównywanie liczb naturalnych. Dostępne poziomy to Łatwy (+8/−4), Średni (+10/−5) i Trudny (+13/−7).
-- Posiłek wymaga produktu ze sklepu i 15 niewykorzystanych poprawnych odpowiedzi z ostatnich 24 godzin. Za każde siedem poprawnych odpowiedzi profil otrzymuje zabawkę.
+- Karmienie wymaga jednej porcji ze sklepu i wybranej liczby niewykorzystanych poprawnych odpowiedzi z ostatnich 24 godzin. Jedna odpowiedź = 10 punktów karmienia = 96 minut; 150 pkt = 24 godziny. Czas sumuje się bez limitu gry. Za każde siedem poprawnych odpowiedzi profil otrzymuje zabawkę.
 - Ustawienia → Link do logowania na drugim telefonie pozwala przenieść się na inne urządzenie. Otwórz prywatny link i podaj hasło. Przy pracy offline postępy zapisują się lokalnie. Konflikt wersji wymaga wyboru wersji po zachowaniu kopii.
 - Opcjonalna kopia haseł w ustawieniach wydaje osobny plik klucza rodzica i zbiera zaszyfrowane hasła przy kolejnych logowaniach na tym urządzeniu. Przechowuj klucz osobno od kopii. Odczyt wymaga obu plików (RSA-OAEP, SHA-256, szyfrogram zakodowany szesnastkowo).
 - Każdą z trzech nagród dziennych można odebrać raz na profil. Wyzwania i liczniki odświeżają się o północy w strefie Europe/Warsaw.
 - Opanowanie wymaga minimum 12 zadań na dostępnych poziomach, co najmniej 10 poprawnych odpowiedzi i skuteczności co najmniej 80% na tych poziomach. Ranga jest liczona z aktualnej liczby opanowanych kategorii. Po spadku skuteczności może się zmienić.
-- Zakres potrzeb wynosi 0–150. Najedzenie maleje liniowo przez 24 godziny, szczęście i energia przez 48 godzin. Zwierzęta pozostają w kolekcji. Drzemka trwa dwie minuty, a zwierzę można wcześniej obudzić.
+- Paski potrzeb mają zakres 0–150, lecz zapas najedzenia może przekraczać 24 godziny. Po ponad 24 godzinach głodu zwierzę opuszcza hodowlę. Kontrola następuje przy otwarciu aktywnego profilu i podczas korzystania z aplikacji, ranking aktualizuje się online. Przy migracji głodne zwierzęta otrzymują 24 godziny okresu przejściowego. Szczęście i energia maleją przez 48 godzin. Drzemka trwa dwie minuty, a zwierzę można wcześniej obudzić.
 - W ustawieniach można zmienić motyw, ograniczyć animacje, zarządzać profilami i zapisać komplet danych do pliku JSON. Import zastępuje wszystkie obecne profile dopiero po potwierdzeniu. Usuwanie profilu i reset jego postępów również wymagają potwierdzenia. W trakcie treningu niesprawdzona odpowiedź znajduje się w pamięci bieżącej karty.
 
 ## Źródła programu nauczania

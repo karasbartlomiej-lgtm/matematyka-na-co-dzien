@@ -1,7 +1,7 @@
 import {grade3Bank} from '../dist/grade3-bank.mjs'
 import assert from 'node:assert/strict'
 import {grades,activeGrade,activeTopics,exercise,matches,parse} from '../dist/math.mjs'
-import {buySupply,pointsForAnswer,animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, valid, today} from '../dist/game.mjs'
+import {buySupply,pointsForAnswer,animals, profile, gradeAnswer, record, rank, progress, dailySet, claim, buy, care, readPet, feedingStatus, sweepPets, petExpired, feedingPointMs, valid, today} from '../dist/game.mjs'
 
 const placeNames=[
  'jedności','dziesiątek','setek','tysięcy','dziesiątek tysięcy','setek tysięcy',
@@ -220,11 +220,11 @@ for(const [level,good,bad] of [[3,8,-4],[4,10,-5],[5,13,-7]]){
 }
 const caretaker=profile('Opiekun')
 caretaker.coins=400
-assert(buy(caretaker,0))
-assert(buy(caretaker,1))
+const evening=Date.parse('2026-11-24T22:59:00Z'),hour=3600000
+assert(buy(caretaker,0,evening))
+assert(buy(caretaker,1,evening))
 assert(buySupply(caretaker,'apple'))
 assert(buySupply(caretaker,'ball'))
-const evening=Date.parse('2026-11-24T22:59:00Z'),hour=3600000
 const earn=(n,t)=>{for(let i=0;i<n;i++)gradeAnswer(caretaker,4,'natural',4,true,today(t),t)}
 earn(14,evening)
 assert(!care(caretaker,0,'food',evening,'apple'))
@@ -237,9 +237,14 @@ assert.equal(readPet(caretaker.pets[0],evening+12*hour).food,75)
 assert.equal(readPet(caretaker.pets[0],evening+24*hour).food,0)
 assert(buySupply(caretaker,'apple'))
 earn(15,evening+hour)
-assert(!care(caretaker,0,'food',evening+hour,'apple'))
+assert(care(caretaker,0,'food',evening+hour,'apple',10))
+assert.equal(caretaker.pets[0].fedUntil,evening+24*hour+96*60000)
+assert.equal(feedingStatus(caretaker,evening+hour).available,14)
+assert(buySupply(caretaker,'apple'))
+assert(care(caretaker,0,'food',evening+hour,'apple',140))
+assert.equal(caretaker.pets[0].fedUntil,evening+48*hour)
+assert.equal(readPet(caretaker.pets[0],evening+2*hour).food,150)
 assert(care(caretaker,0,'sleep',evening+23*hour))
-assert(care(caretaker,0,'food',evening+24*hour,'apple'))
 assert(care(caretaker,0,'play',evening+24*hour,'ball'))
 assert.equal(caretaker.supplies.ball,2)
 const full={scale:150,food:150,happy:150,energy:150,sleep:0,updated:evening}
@@ -247,6 +252,29 @@ assert.equal(readPet(full,evening+24*hour).happy,75)
 assert.equal(readPet(full,evening+48*hour).energy,0)
 assert.equal(readPet(full,evening+48*hour).happy,0)
 assert(valid({...snapshot,active:caretaker.id,profiles:[caretaker]}))
+assert.equal(feedingPointMs*150,24*hour)
+assert.equal(petExpired(caretaker.pets[0],evening+72*hour),false)
+assert.equal(petExpired(caretaker.pets[0],evening+72*hour+1),true)
+caretaker.avatar={...caretaker.avatar,type:'pet',pet:0}
+assert.deepEqual(sweepPets(caretaker,evening+72*hour+1).removed,[0,1])
+assert.equal(caretaker.avatar.type,'preset')
+const restored=profile('Migracja')
+restored.pets[0]={...full,food:0}
+restored.pets[1]={...full,food:150,updated:evening+36*hour}
+assert(sweepPets(restored,evening+48*hour).changed)
+assert.equal(restored.pets[0].fedUntil,evening+48*hour)
+assert.equal(restored.pets[1].fedUntil,evening+60*hour)
+assert(!sweepPets(restored,evening+72*hour).changed)
+assert.deepEqual(sweepPets(restored,evening+72*hour+1).removed,[0])
+const rescue=profile('Powrót');rescue.coins=500
+assert(buy(rescue,0,evening))
+assert(buySupply(rescue,'apple'))
+gradeAnswer(rescue,4,'natural',4,true,today(evening+24*hour),evening+24*hour)
+assert(!care(rescue,0,'food',evening+24*hour,'apple',15))
+assert(!care(rescue,0,'food',evening+24*hour,'apple',20))
+assert(care(rescue,0,'food',evening+24*hour,'apple',10))
+assert.equal(rescue.pets[0].fedUntil,evening+24*hour+96*60000)
+assert(valid({...snapshot,active:rescue.id,profiles:[rescue]}))
 const {verifyProfile}=await import('../dist/profile-lock.mjs')
 assert(await verifyProfile(caretaker,'12'))
 assert(!await verifyProfile(caretaker,'34'))

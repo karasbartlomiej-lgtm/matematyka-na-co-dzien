@@ -1,7 +1,7 @@
 import {openSync,newToken} from './profile-sync.mjs'
 import { createFamilyVault, sealPassword, verifyProfile } from './profile-lock.mjs'
 import { grades, levels, exercise, matches, parse } from './math.mjs'
-import { supplies, stock, buySupply, getSupply, animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, feedingCost, feedingStatus, pointsForAnswer, valid, today } from './game.mjs'
+import { supplies, stock, buySupply, getSupply, animals, groups, ranks, thresholds, profile, initial, record, progress, rank, dailyStats, dailySet, value, claim, claimed, gradeAnswer, buy, care, readPet, feedingCost, feedingStatus, feedingPointMs, hungerGraceMs, sweepPets, petExpired, pointsForAnswer, valid, today } from './game.mjs'
 
 import { createScreenWakeLock } from './wake-lock.mjs'
 
@@ -185,7 +185,7 @@ function challengeCards(p,compact){
 const boardUrl='https://matematyka-profile-rodzinne.karas-bartlomiej.chatgpt.site/ranking'
 let boardRows=null, boardOpen=false, boardMessage='',boardBusy=false,boardAgain=false
 const published=new Map()
-const boardEntry=p=>JSON.stringify({name:p.name,pets:Object.keys(p.pets).map(Number).sort((a,b)=>a-b)})
+const boardEntry=p=>JSON.stringify({name:p.name,pets:Object.entries(p.pets).filter(([,pet])=>!petExpired(pet)).map(([i])=>Number(i)).sort((a,b)=>a-b)})
 try{boardRows=JSON.parse(localStorage.getItem('ostatni-ranking')||'null')}catch{}
 async function boardAuth(p){
  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('ranking/v1/'+p.id+'/'+p.lock.digest))
@@ -251,7 +251,7 @@ function result(){
  return '<section class="screen narrow panel result"><div class="symbol" aria-hidden="true">✓</div><h1>Trening ukończony!</h1><p>Dobra robota! Każde zadanie pomaga Ci ćwiczyć.</p><div class="score">'+session.good+'/'+session.done+'</div><p>Poprawne odpowiedzi</p><div class="row">'+coins+' <strong>'+signedPoints(score)+' pkt w tym treningu</strong></div><div class="actions">'+button('again','Nowy trening',{class:'primary'})+route('learn','Wróć do nauki')+'</div></section>'
 }
 const supplyEffects=item=>item.action==='food'
- ? 'Pełny posiłek (15 odpowiedzi)'+' · Szczęście +'+item.happy
+ ? 'Porcja do karmienia lub dokarmiania'+' · Szczęście +'+item.happy
  : 'Szczęście +'+item.happy+' · Energia −'+item.energy
 const supplyIcon=item=>'<span class="supply-icon" aria-hidden="true">'+item.icon+'</span>'
 function accessoryShop(p){
@@ -268,16 +268,23 @@ function inventory(p){
 function shop(p){
  return '<section class="screen"><div class="row spaced">'+head('Sklep ze zwierzętami','Kup towarzysza za monety zdobyte w treningu.')+balance(p)+'</div><div class="choice" aria-label="Kategorie zwierząt">'+route('inventory','Przedmioty dla zwierząt')+''+groups.map((n,i)=>button('group',n,{val:i,pressed:group===i,class:group===i?'selected':''})).join('')+'</div><div class="grid">'+animals.map(([name,price],i)=>Math.floor(i/6)!==group?'':'<article class="pet-card">'+animal(i,null,true)+'<h3>'+name+'</h3><div class="row">'+coins+' <strong>'+format(price)+'</strong></div>'+button('buy',p.pets[i]?'Kupione':p.coins<price?'Brakuje '+format(price-p.coins)+' monet':'Kup',{val:i,class:'primary',disabled:!!p.pets[i]||p.coins<price})+'</article>').join('')+'</div></section>'
 }
+const timeLeft=ms=>{
+ const m=Math.max(0,Math.ceil(ms/60000)),d=Math.floor(m/1440),h=Math.floor(m%1440/60)
+ return (d?d+' d. ':'')+(h?h+' godz. ':'')+m%60+' min'
+}
+const localDate=ms=>new Date(ms).toLocaleString('pl-PL',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Warsaw'})
 function pets(p){
- const now=Date.now(), date=today(now), {fed,total,available}=feedingStatus(p,now)
- const missing=Math.max(0,feedingCost-available)
- return '<section class="screen">'+head('Moje zwierzęta')+route('inventory','Przedmioty dla zwierząt')+'<div class="panel stack"><div class="row spaced"><strong>Poprawne odpowiedzi do wykorzystania: '+format(available)+'</strong><strong>Nakarmione w ostatnich 24 h: '+fed+' / '+total+'</strong></div><p>Każde zwierzę potrzebuje co dzień '+feedingCost+' poprawnych odpowiedzi. Kup jedzenie w sklepie. Karmienie zużywa 15 poprawnych odpowiedzi z ostatnich 24 godzin. Pełny posiłek wystarcza na 24 godziny, a pełne szczęście i energia na 48 godzin.</p><small>Zabawki: '+p.toys+' · Drzemka trwa 2 minuty.</small>'+route('learn','Ćwicz i zdobądź odpowiedzi')+'</div>'+(total?'<div class="grid">'+Object.entries(p.pets).map(([i,raw])=>{
-  const pet=readPet(raw,now,date), fedToday=pet.fedAt>now-86400000
-  const meter=(label,n)=>'<div><div class="row"><small>'+label+'</small><small>'+Math.round(n)+' / 150 · '+Math.round(n/1.5)+'%</small></div>'+bar(n/1.5,label)+'</div>'
-  return '<article class="pet-card">'+animal(+i,pet,true)+'<h3>'+animals[i][0]+(pet.sleep?' · śpi':'')+'</h3>'+
-   '<small>'+ (fedToday?'Nakarmiony w ostatnich 24 h':missing?'Głodny · brakuje '+missing+' do '+feedingCost+' poprawnych odpowiedzi':pet.sleep?'Głodny · obudź przed karmieniem':'Głodny · posiłek gotowy')+'</small>'+
-   '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div><div class="actions">'+supplies.filter(item=>item.id!=='meal'&&stock(p,item)>0).map(item=>button('care',item.action==='food'?'Nakarm · '+item.name:'Baw się · '+item.name,{val:i+':'+item.action+':'+item.id,disabled:!!pet.sleep||(item.action==='food'?fedToday||missing>0:pet.happy>=150||pet.energy<45)})).join('')+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
- }).join('')+'</div>':'<div class="panel empty stack"><h2>Jeszcze nie masz zwierząt</h2><p>Za 50 monet możesz kupić swojego pierwszego chomika.</p>'+route('shop','Przejdź do sklepu','primary')+'</div>')+'</section>'
+ const now=Date.now(),{fed,total,available}=feedingStatus(p,now),maxPoints=available*10
+ return '<section class="screen">'+head('Moje zwierzęta')+route('inventory','Przedmioty dla zwierząt')+'<div class="panel stack"><div class="row spaced"><strong>Punkty karmienia: '+format(maxPoints)+'</strong><strong>Najedzone: '+fed+' / '+total+'</strong></div><p>Jedna niewykorzystana poprawna odpowiedź z ostatnich 24 godzin daje 10 punktów karmienia. Każde 10 pkt dodaje 1 godz. 36 min, 150 pkt dodaje 24 godziny. Zapas można przedłużać w dowolnej chwili. Karmienie zużywa jedną porcję ze sklepu. Po ponad 24 godzinach głodu zwierzę opuszcza hodowlę. Szczęście i energia: 48 godzin.</p><small>Zabawki: '+p.toys+' · Drzemka: 2 minuty.</small></div>'+(total?'<div class="grid">'+Object.entries(p.pets).filter(([,raw])=>!petExpired(raw,now)).map(([i,raw])=>{
+ const pet=readPet(raw,now),fedNow=pet.fedUntil>now,points=Math.min(150,maxPoints)
+ const meter=(label,n)=>'<div><div class="row"><small>'+label+'</small><small>'+Math.round(n)+' / 150 · '+Math.round(n/1.5)+'%</small></div>'+bar(n/1.5,label)+'</div>'
+ const foodItems=supplies.filter(item=>item.action==='food'&&item.id!=='meal'&&stock(p,item)>0)
+ return '<article class="pet-card">'+animal(+i,pet,true)+'<h3>'+animals[i][0]+(pet.sleep?' · śpi':'')+'</h3>'+
+ '<div class="panel stack"><strong>'+(fedNow?'Najedzony jeszcze '+timeLeft(pet.fedUntil-now):'Głodny od '+timeLeft(now-pet.fedUntil))+'</strong><small>'+(fedNow?'Zapas do: '+localDate(pet.fedUntil):'Okres opieki kończy się: '+localDate(pet.fedUntil+hungerGraceMs))+'</small></div>'+
+ '<div class="pet-bars">'+meter('Szczęście',pet.happy)+meter('Najedzenie',pet.food)+meter('Energia',pet.energy)+'</div>'+
+ (foodItems.length?'<label class="form-row">Punkty karmienia (10 pkt = 96 min)<input id="feed-points-'+i+'" type="number" inputmode="numeric" min="10" max="'+Math.max(10,maxPoints)+'" step="10" value="'+Math.max(10,points)+'" '+(maxPoints<10?'disabled':'')+'></label><small>Dodatkowy czas: <span id="feed-preview-'+i+'">'+timeLeft(points*feedingPointMs)+'</span></small>':'<small>Brak jedzenia w zapasie.</small>')+
+ '<div class="actions">'+supplies.filter(item=>item.id!=='meal'&&stock(p,item)>0).map(item=>button('care',item.action==='food'?(fedNow?'Dokarm · ':'Nakarm · ')+item.name:'Baw się · '+item.name,{val:i+':'+item.action+':'+item.id,disabled:item.action==='food'?maxPoints<10:!!pet.sleep||pet.happy>=150||pet.energy<45})).join('')+button('care',pet.sleep?'Obudź':'Połóż spać',{val:i+(pet.sleep?':wake':':sleep')})+'</div></article>'
+ }).join('')+'</div>':'<div class="panel empty stack"><h2>Nie masz teraz zwierząt</h2><p>W sklepie możesz wybrać nowego towarzysza.</p>'+route('shop','Przejdź do sklepu','primary')+'</div>')+'</section>'
 }
 function summaryStats(p){
  const days={}
@@ -311,6 +318,15 @@ function users(){
 function settings(){
  return '<section class="screen narrow">'+head('Ustawienia')+'<div class="panel stack"><h2>Wygląd</h2><div class="choice">'+[['light','Tryb jasny'],['dark','Tryb ciemny']].map(([id,n])=>button('theme',n,{val:id,class:state.theme===id?'selected':'',pressed:state.theme===id})).join('')+'</div><fieldset><legend>Ustawienia koloru</legend><div class="choice">'+Object.entries(palettes).map(([id,name])=>button('accent',name,{val:id,class:(state.accent??'blue')===id?'selected':'',pressed:(state.accent??'blue')===id})).join('')+'</div></fieldset><label class="row"><input type="checkbox" id="motion" '+(state.motion?'checked':'')+'> Włącz animacje</label></div><div class="panel stack"><h2>Ekran</h2><label class="row"><input type="checkbox" id="keep-screen-awake" aria-describedby="wake-status" '+(state.keepScreenAwake?'checked':'')+(wakeLock.supported?'':' disabled')+'> Nie wygaszaj ekranu</label><p id="wake-status" role="status">'+screenWakeStatus[wakeStatus]+'</p></div><div class="panel stack"><h2>Dane i profile</h2><p>Kopia JSON obejmuje wszystkie profile i ustawienia z tego urządzenia.</p><div class="actions">'+button('parent-mail','Adres e-mail rodzica')+button('vault',state.vault?'Pobierz zaszyfrowaną kopię haseł':'Włącz kopię haseł i pobierz klucz rodzica')+route('users','Zarządzaj profilami')+button('link-profile','Link do logowania na drugim telefonie')+button('export-one','Zapisz mój profil na drugi telefon')+button('import-one','Wczytaj mój profil z pliku')+button('export','Eksportuj kopię')+button('import','Importuj kopię')+button('reset','Resetuj postępy aktywnego profilu',{class:'danger'})+'</div></div><div class="panel stack"><h2>O aplikacji</h2><p>Matematyka na co dzień · wersja 1.0. Ćwiczenia matematyczne dla klas 1–8. Profile i postępy są zapisywane w tej przeglądarce.</p><p>Po pierwszym pełnym uruchomieniu z HTTPS aplikacja może działać offline. Na iPhonie wybierz w Safari „Udostępnij”, potem „Dodaj do ekranu początkowego”. Na Androidzie użyj polecenia instalacji w menu przeglądarki.</p></div></section>'
 }
+function refreshPets(){
+ const p=active()
+ if(!p||unlocked!==p.id)return false
+ const result=sweepPets(p)
+ if(!result.changed)return false
+ if(draft?.avatar.type==='pet'&&!p.pets[draft.avatar.pet])draft.avatar.type='preset'
+ save()
+ return true
+}
 function render(scroll=false){
  const p=active()
  document.documentElement.dataset.accent=state.accent??'blue'
@@ -323,6 +339,7 @@ function render(scroll=false){
   $('main').innerHTML='<section class="screen narrow panel stack"><h1>Wybierz swój profil</h1><div class="choice">'+state.profiles.map(x=>button('login-profile',esc(x.name),{val:x.id,pressed:x.id===candidate.id,class:x.id===candidate.id?'selected':''})).join('')+'</div><form class="stack" id="login-form"><label class="form-row">'+(candidate.lock?'Hasło profilu':'Ustal pierwsze hasło')+' · '+esc(candidate.name)+'<input name="password" type="password" required autocomplete="'+(candidate.lock?'current-password':'new-password')+'"></label><small>Od 1 do 4 znaków</small><button class="primary">'+(candidate.lock?'Zaloguj się':'Zapisz hasło i wejdź')+'</button></form>'+button('remind','Przypomnij hasło')+button('import-one','Wczytaj swój profil z pliku')+'</section>'
   return
  }
+ refreshPets()
  header(p)
  const views={inventory,learn,setup,task:taskScreen,result,shop,pets,stats,rank:rankScreen,profile:profileScreen,users,settings,challenges:p=>'<section class="screen narrow">'+head('Codzienne wyzwania','Klasa '+active().grade+' · Zmiana wyzwań o północy czasu polskiego.')+challengeCards(p,false)+'</section>'}
  $('main').innerHTML=views[page](p)
@@ -423,9 +440,11 @@ const actions={
  },
  care:v=>{
   const [i,a,item]=v.split(':'), p=active(), pet=p.pets[i], toys=p.toys,inventory=p.supplies,credits=p.credits
-  if(!care(p,+i,a,Date.now(),item)){render();return}
+  const points=a==='food'?Number($('feed-points-'+i)?.value):undefined
+  if(a==='food'&&(!Number.isSafeInteger(points)||points<10||points%10||points>feedingStatus(p).available*10)){toast('Wybierz dostępną liczbę punktów, w wielokrotnościach 10.');return}
+  if(!care(p,+i,a,Date.now(),item,points)){render();return}
   if(!save()){p.pets[i]=pet;p.toys=toys;p.supplies=inventory;p.credits=credits;return}
-  animatePet(+i,a,{food:'Smacznego! Wykorzystano '+feedingCost+' poprawnych odpowiedzi.',play:'Ale zabawa!',sleep:'Dobrej drzemki!',wake:'Pobudka!'}[a])
+  animatePet(+i,a,{food:'Dodano '+timeLeft(points*feedingPointMs)+' zapasu jedzenia.',play:'Ale zabawa!',sleep:'Dobrej drzemki!',wake:'Pobudka!'}[a])
  },
  claim:v=>{const p=active();if(claim(p,active().grade,v)){save();render();toast('Wyzwanie ukończone! Nagroda odebrana.',true)}},
  edit:()=>{draft=structuredClone({name:active().name,avatar:active().avatar});render()},
@@ -466,6 +485,10 @@ document.addEventListener('mousedown',e=>{if(e.target.closest('[data-action="key
 document.addEventListener('input',e=>{
  if(e.target.id==='answer'&&session&&!session.checked) session.input=e.target.value
  if(e.target.id==='profile-name'&&draft)draft.name=e.target.value
+ if(e.target.id.startsWith('feed-points-')){
+  const preview=$('feed-preview-'+e.target.id.slice(12)),points=Number(e.target.value)
+  if(preview)preview.textContent=e.target.validity.valid&&points>=10?timeLeft(points*feedingPointMs):'—'
+ }
 })
 document.addEventListener('submit',async e=>{
  if(e.target.id==='cloud-login'){
@@ -571,6 +594,8 @@ let date=today()
 setInterval(()=>{
  const current=today(), dateChanged=current!==date
  date=current
+ if(unlocked!==active().id)return
+ if(refreshPets()){if(page==='task')header(active());else render();return}
  if(page==='pets'){
   const p=active(), sleeping=Object.entries(p.pets).filter(([,pet])=>pet.sleep&&pet.sleep<=Date.now())
   for(const [i,pet] of sleeping)p.pets[i]={...readPet(pet),updated:Date.now()}
@@ -583,8 +608,9 @@ window.addEventListener('storage',e=>{
  if(e.key!==storage||!e.newValue)return
  try{const changed=JSON.parse(e.newValue);if(valid(changed)){state=changed;syncWakeLock();go('learn');toast('Zapis z innej karty został wczytany.')}}catch{}
 })
-document.addEventListener('visibilitychange',syncWakeLock)
-window.addEventListener('pageshow',syncWakeLock)
+function onReturn(){syncWakeLock();if(document.visibilityState==='visible'&&refreshPets()){if(page==='task')header(active());else render()}}
+document.addEventListener('visibilitychange',onReturn)
+window.addEventListener('pageshow',onReturn)
 render()
 resumeLogin().catch(()=>{})
 syncWakeLock()

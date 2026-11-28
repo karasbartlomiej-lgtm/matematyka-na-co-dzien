@@ -84,30 +84,45 @@ export function claim(p,g,id,date=today()){
  d.claimed.push(slot);p.coins+=c.reward;return true
 }
 export const claimed=(p,id,date=today())=>Object.entries(p.daily).some(([k,v])=>k.startsWith(date+':')&&v.claimed.includes(id==='streak'?2:id==='any'?0:1))
-export function buy(p,i){
+export function buy(p,i,now=Date.now()){
  const item=animals[i]
  if(!item||p.pets[i]||p.coins<item[1])return false
  p.coins-=item[1]
- p.pets[i]={scale:150,pricePaid:item[1],food:0,happy:112.5,energy:112.5,sleep:0,updated:Date.now()}
+ p.pets[i]={scale:150,pricePaid:item[1],food:0,happy:112.5,energy:112.5,sleep:0,updated:now,fedUntil:now}
  return true
 }
 const day=86400000
+export const feedingPointMs=576000
+export const hungerGraceMs=day
 const recentCredits=(p,now)=>(p.credits??[]).filter(t=>t>now-day&&t<=now)
+const foodDeadline=(pet,now)=>pet.fedUntil??Math.max(now,Math.round(pet.updated+pet.food*(pet.scale===150?1:1.5)*feedingPointMs))
+export const petExpired=(pet,now=Date.now())=>pet.fedUntil!==undefined&&now-pet.fedUntil>day
+export function sweepPets(p,now=Date.now()){
+ const removed=[]
+ let changed=false
+ for(const [i,pet] of Object.entries(p.pets)){
+  if(pet.fedUntil===undefined){p.pets[i]=readPet(pet,now);changed=true}
+  else if(petExpired(pet,now)){delete p.pets[i];removed.push(Number(i));changed=true}
+ }
+ if(p.avatar.type==='pet'&&!p.pets[p.avatar.pet]){p.avatar={...p.avatar,type:'preset'};changed=true}
+ return {changed,removed}
+}
 export function feedingStatus(p,now=Date.now()){
- const pets=Object.values(p.pets)
- return {fed:pets.filter(pet=>pet.fedAt>now-day).length,total:pets.length,available:recentCredits(p,now).length}
+ const pets=Object.values(p.pets).filter(pet=>!petExpired(pet,now))
+ return {fed:pets.filter(pet=>foodDeadline(pet,now)>now).length,total:pets.length,available:recentCredits(p,now).length}
 }
 export function readPet(pet,now=Date.now()){
  const scale=pet.scale===150?1:1.5
  const elapsed=Math.max(0,now-pet.updated)/day
  const decayed=(v,rate)=>Math.max(0,v*scale-rate*elapsed)
  const woke=pet.sleep&&pet.sleep<=now
- return {...pet,scale:150,food:decayed(pet.food,150),happy:decayed(pet.happy,75),
+ const fedUntil=foodDeadline(pet,now)
+ return {...pet,scale:150,fedUntil,food:Math.min(150,Math.max(0,(fedUntil-now)/feedingPointMs)),happy:decayed(pet.happy,75),
   energy:woke?Math.max(0,150-75*(now-pet.sleep)/day):decayed(pet.energy,75),
   sleep:woke?0:pet.sleep,updated:now}
 }
-export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'rewardToy'){
- if(!p.pets[i])return false
+export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'rewardToy',points=feedingCost*10){
+ if(!p.pets[i]||petExpired(p.pets[i],now))return false
  const date=today(now)
  const pet=readPet(p.pets[i],now,date)
  const item=getSupply(id)
@@ -115,13 +130,16 @@ export function care(p,i,action,now=Date.now(),id=action==='food'?'meal':'reward
   if(item?.action!==action||item.id==='meal'||stock(p,item)<=0)return false
  }
  if(action==='wake'&&pet.sleep){pet.sleep=0;pet.energy=Math.min(150,pet.energy+18)}
- else if(pet.sleep)return false
- else if(action==='food'&&!(pet.fedAt>now-day)&&feedingStatus(p,now).available>=feedingCost){
-  pet.fedAt=now
-  p.credits=recentCredits(p,now).slice(feedingCost)
-  pet.food=150
+ else if(action==='food'){
+  const cost=points/10,credits=recentCredits(p,now)
+  if(!Number.isSafeInteger(cost)||cost<1||cost>credits.length)return false
+  const until=Math.max(now,pet.fedUntil)+points*feedingPointMs
+  if(!Number.isSafeInteger(until)||until>8640000000000000)return false
+  pet.fedAt=now;pet.fedUntil=until;p.credits=credits.slice(cost)
+  pet.food=Math.min(150,(until-now)/feedingPointMs)
   pet.happy=Math.min(150,pet.happy+1.5*item.happy)
  }
+ else if(pet.sleep)return false
  else if(action==='play'&&pet.happy<150&&pet.energy>=45){pet.happy=Math.min(150,pet.happy+1.5*item.happy);pet.energy-=1.5*item.energy}
  else if(action==='sleep'){pet.sleep=now+120000}
  else return false
@@ -137,7 +155,7 @@ const obj=o=>o!==null&&typeof o==='object'&&!Array.isArray(o)
 export function valid(data){
  const validRows=r=>Array.isArray(r)&&r.length===5&&r.every(x=>Array.isArray(x)&&x.length===2&&int(x[0])&&int(x[1],x[0]))
  const validStats=o=>obj(o)&&Object.entries(o).every(([k,v])=>{const [g,id]=k.split(':');return grades[g]?.some(c=>c.id===id)&&validRows(v)})
- const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=(p.scale===150?150:100))&&int(p.updated)&&int(p.sleep)&&(p.fedOn===undefined||typeof p.fedOn==='string'&&/^\d{4}-\d\d-\d\d$/.test(p.fedOn)))
+ const validPets=o=>obj(o)&&Object.entries(o).every(([i,p])=>String(+i)===i&&int(+i,17)&&obj(p)&&['food','happy','energy'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=(p.scale===150?150:100))&&int(p.updated)&&int(p.sleep)&&(p.fedUntil===undefined||int(p.fedUntil,8640000000000000))&&(p.fedOn===undefined||typeof p.fedOn==='string'&&/^\d{4}-\d\d-\d\d$/.test(p.fedOn)))
  const validDaily=o=>obj(o)&&Object.entries(o).every(([k,v])=>/^\d{4}-\d\d-\d\d:[1-8]$/.test(k)&&obj(v)&&['any','correct','streak','best'].every(s=>int(v[s]))&&obj(v.topics)&&Object.values(v.topics).every(n=>int(n))&&Array.isArray(v.claimed)&&v.claimed.every(n=>int(n,2)))
  const validAvatar=(a,p)=>obj(a)&&['preset','custom','pet'].includes(a.type)&&int(a.preset,5)&&['face','hair','shirt','accessory'].every(k=>int(a[k],3))&&int(a.pet,17)&&(a.type!=='pet'||!!p.pets[a.pet])
  return obj(data)&&data.version===1&&(data.keepScreenAwake===undefined||typeof data.keepScreenAwake==='boolean')&&['light','dark'].includes(data.theme)&&typeof data.motion==='boolean'&&Array.isArray(data.profiles)&&data.profiles.length>0&&new Set(data.profiles.map(p=>p?.id)).size===data.profiles.length&&data.profiles.every(p=>obj(p)&&typeof p.id==='string'&&/^[\da-f-]{36}$/.test(p.id)&&typeof p.name==='string'&&p.name.trim().length>0&&p.name.length<=28&&int(p.grade,8)&&p.grade>0&&Number.isSafeInteger(p.coins)&&['food','toys','correct'].every(k=>int(p[k]))&&(p.supplies===undefined||obj(p.supplies)&&Object.entries(p.supplies).every(([id,n])=>getSupply(id)?.price&&int(n)))&&(p.credits===undefined||Array.isArray(p.credits)&&p.credits.every(t=>int(t)))&&(p.lock===undefined||obj(p.lock)&&/^[0-9a-f]{32}$/.test(p.lock.salt)&&/^[0-9a-f]{64}$/.test(p.lock.digest))&&validStats(p.stats)&&validPets(p.pets)&&validDaily(p.daily)&&validAvatar(p.avatar,p))&&data.profiles.some(p=>p.id===data.active)
